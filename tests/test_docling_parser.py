@@ -87,6 +87,7 @@ def test_docling_transform_convert_bytes_success() -> None:
         assert request.method == "POST"
         content_type = request.headers.get("content-type", "")
         assert "multipart/form-data" in content_type
+        assert b'name="file"' in request.read()
 
         return httpx.Response(
             200,
@@ -159,20 +160,20 @@ def test_docling_transform_http_error() -> None:
         transform.convert_bytes(b"dummy bytes")
 
 
-def test_docling_transform_missing_json_content() -> None:
+def test_docling_transform_direct_document_response() -> None:
+    raw_doc = DoclingDocument(name="direct_page").model_dump()
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json={
-                "document": {
-                    "md_content": "only md, no json",
-                },
+                "document": raw_doc,
                 "status": "success",
             },
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     transform = DoclingTransform(api_url=MOCK_API_URL, client=client)
-
-    with pytest.raises(DoclingApiError, match="returned no 'json_content'"):
-        transform.convert_bytes(b"dummy bytes")
+    doc = transform.convert_bytes(b"dummy bytes")
+    assert isinstance(doc, DoclingDocument)
+    assert doc.name == "direct_page"
