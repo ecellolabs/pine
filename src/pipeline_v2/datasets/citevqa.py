@@ -95,9 +95,10 @@ class _RowMeta:
 
 @dataclass
 class _Sample:
-    doc_id: str
-    pdf_path: Path
-    qa_metas: list[_RowMeta]
+    question_id: str
+    dataset_type: str  # "Single-Doc", "N-to-1-Gold", "N-to-N-Gold"
+    pdf_paths: list[Path]  # Paths to all candidate PDFs in PDF_Source
+    qa_meta: _RowMeta
 
 
 class SplitIterator(Sequence[_Sample]):
@@ -117,27 +118,16 @@ class SplitIterator(Sequence[_Sample]):
         self._pdf_dir = Path(data_dir) / "pdfs"
         self._pdf_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Indexing CiteVQA rows by document")
-        self._row_indices_by_doc = self._index_rows_by_doc()
-        self._doc_ids = list(self._row_indices_by_doc)
+        logger.info(f"Indexing {len(self._rows)} CiteVQA question items")
+        self._row_metas = [_RowMeta.from_hf_row(row) for row in self._rows]
         if max_samples is not None:
-            self._doc_ids = self._doc_ids[:max_samples]
+            self._row_metas = self._row_metas[:max_samples]
 
         logger.info(
-            f"Downloading / verifying CiteVQA document URLs for {len(self._doc_ids)} docs"
+            f"Downloading / verifying CiteVQA document URLs for {len(self._row_metas)} questions"
         )
         self._url_by_doc_id = self._load_pdf_sources(Path(data_dir))
         self._download_documents()
-
-    def _index_rows_by_doc(self) -> dict[str, list[int]]:
-        row_indices_by_doc: dict[str, list[int]] = {}
-        for row_index, row in enumerate(self._rows):
-            raw_sources = row.get("PDF_Source") or []
-            for p in raw_sources:
-                doc_name = Path(str(p)).name
-                if doc_name:
-                    row_indices_by_doc.setdefault(doc_name, []).append(row_index)
-        return row_indices_by_doc
 
     def _load_pdf_sources(self, data_dir: Path) -> dict[str, str]:
         csv_file = data_dir / "pdf_source.csv"
@@ -171,12 +161,18 @@ class SplitIterator(Sequence[_Sample]):
                         url_map[f"{tid}.pdf"] = url
         return url_map
 
-    def _pdf_path(self, doc_id: str) -> Path:
-        return self._pdf_dir / doc_id
+    def _pdf_path(self, doc_name: str) -> Path:
+        return self._pdf_dir / doc_name
 
     def _download_documents(self) -> None:
+        referenced_docs: set[str] = set()
+        for meta in self._row_metas:
+            referenced_docs.update(meta.pdf_sources)
+
         missing_doc_ids = [
-            doc_id for doc_id in self._doc_ids if not self._pdf_path(doc_id).exists()
+            doc_id
+            for doc_id in sorted(referenced_docs)
+            if not self._pdf_path(doc_id).exists()
         ]
         if not missing_doc_ids:
             return
@@ -199,7 +195,7 @@ class SplitIterator(Sequence[_Sample]):
                 try:
                     manager.download_and_extract([spec], extract=False)
                 except Exception as e:  # noqa: BLE001
-                    # Fallback to direct request with User-Agent (many external hosts block requests without browser UA)
+                    # Fallback to direct request with User-Agent
                     rel_path = spec.rel_output_file_path or ""
                     dest_path = self._pdf_dir / Path(rel_path).name
                     try:
@@ -237,19 +233,17 @@ class SplitIterator(Sequence[_Sample]):
         if isinstance(index, slice):
             return [self[item] for item in range(*index.indices(len(self)))]
 
-        doc_id = self._doc_ids[index]
-        row_indices = self._row_indices_by_doc[doc_id]
-        qa_metas = [
-            _RowMeta.from_hf_row(self._rows[row_index]) for row_index in row_indices
-        ]
+        meta = self._row_metas[index]
+        pdf_paths = [self._pdf_path(pdf_name) for pdf_name in meta.pdf_sources]
         return _Sample(
-            doc_id=doc_id,
-            pdf_path=self._pdf_path(doc_id),
-            qa_metas=qa_metas,
+            question_id=meta.question_id,
+            dataset_type=meta.dataset_type,
+            pdf_paths=pdf_paths,
+            qa_meta=meta,
         )
 
     def __len__(self) -> int:
-        return len(self._doc_ids)
+        return len(self._row_metas)
 
 
 class InputTransform:
@@ -274,64 +268,85 @@ class InputTransform:
         )
 
     def __call__(self, sample: _Sample) -> MultiPageDocumentInstance:
-        if not sample.pdf_path.exists():
-            raise FileNotFoundError(
-                f"PDF file for sample '{sample.doc_id}' not found at '{sample.pdf_path}'. "
-                "CiteVQA PDFs can be acquired via ModelScope: "
-                f"'modelscope download --dataset risemds/CiteVQA_PDF --local_dir {sample.pdf_path.parent}'"
+        meta = sample.qa_meta
+        all_pages: list[SinglePageDocumentInstance] = []
+        page_idx_map: dict[tuple[str, int], int] = {}
+        invalid_pdfs: list[str] = []
+
+        for doc_idx, pdf_path in enumerate(sample.pdf_paths):
+            pdf_name = pdf_path.name
+            if not pdf_path.exists():
+                raise FileNotFoundError(
+                    f"PDF file for sample '{sample.question_id}' not found at '{pdf_path}'. "
+                    "CiteVQA PDFs can be acquired via ModelScope: "
+                    f"'modelscope download --dataset risemds/CiteVQA_PDF --local_dir {pdf_path.parent}'"
+                )
+
+            with open(pdf_path, "rb") as f:
+                header = f.read(5)
+                if not header.startswith(b"%PDF"):
+                    logger.warning(
+                        f"File '{pdf_name}' is not a valid PDF document (magic header: {header!r})."
+                    )
+                    invalid_pdfs.append(pdf_name)
+                    continue
+
+            doc_inst = MultiPageDocumentInstance.from_pdf(
+                pdf_path,
+                sample_id=f"{sample.question_id}#{pdf_name}",
+            )
+            for p_idx, page in enumerate(doc_inst.pages):
+                source_page_id = p_idx + 1  # 1-indexed in PDF
+                global_idx = len(all_pages)
+                page_idx_map[(pdf_name, source_page_id)] = global_idx
+
+                page_meta = dict(page.metadata)
+                page_meta["source_pdf_name"] = pdf_name
+                page_meta["source_page_id"] = source_page_id
+                page_meta["doc_index"] = doc_idx
+                page_meta["global_page_idx"] = global_idx
+
+                updated_page = replace(page, metadata=page_meta)
+                all_pages.append(updated_page)
+
+        if not all_pages:
+            return MultiPageDocumentInstance(
+                sample_id=sample.question_id,
+                pages=[],
+                metadata={
+                    "question_id": sample.question_id,
+                    "dataset_type": sample.dataset_type,
+                    "invalid_pdf": True,
+                    "invalid_pdfs": invalid_pdfs,
+                },
             )
 
-        # Validate PDF magic header
-        with open(sample.pdf_path, "rb") as f:
-            header = f.read(5)
-            if not header.startswith(b"%PDF"):
-                logger.warning(
-                    f"File '{sample.pdf_path.name}' is not a valid PDF document (magic header: {header!r}). "
-                    "External URL returned an HTML page instead of PDF binary."
-                )
-                return MultiPageDocumentInstance(
-                    sample_id=sample.doc_id,
-                    pages=[],
-                    metadata={"doc_id": sample.doc_id, "invalid_pdf": True},
-                )
+        bboxes_by_global_page: dict[int, list[_EvidenceMeta]] = {}
+        gold_evidence_global_pages: list[int] = []
+        doc_evidence_sources: list[str] = []
 
-        document = MultiPageDocumentInstance.from_pdf(
-            sample.pdf_path,
-            sample_id=sample.doc_id,
+        for ev in meta.evidence_list:
+            if ev.source_page_id is not None:
+                key = (ev.source_pdf_name, ev.source_page_id)
+                if key in page_idx_map:
+                    global_idx = page_idx_map[key]
+                    if global_idx not in gold_evidence_global_pages:
+                        gold_evidence_global_pages.append(global_idx)
+                    doc_evidence_sources.append(ev.type)
+                    bboxes_by_global_page.setdefault(global_idx, []).append(ev)
+
+        qa_pair = MultiPageQAPair(
+            id=0,
+            question_text=meta.question,
+            answer_text=meta.standard_answer,
+            evidence_pages=sorted(gold_evidence_global_pages),
+            evidence_sources=doc_evidence_sources,
+            answer_format=meta.question_type,
         )
 
-        bboxes_by_page: dict[int, list[_EvidenceMeta]] = {}
-        qa_pairs: list[MultiPageQAPair] = []
-
-        for qa_id, meta in enumerate(sample.qa_metas):
-            doc_evidence_pages: list[int] = []
-            doc_evidence_sources: list[str] = []
-
-            for ev in meta.evidence_list:
-                if (
-                    ev.source_pdf_name == sample.doc_id
-                    and ev.source_page_id is not None
-                ):
-                    page_idx = ev.source_page_id - 1
-                    if page_idx not in doc_evidence_pages:
-                        doc_evidence_pages.append(page_idx)
-                    doc_evidence_sources.append(ev.type)
-                    bboxes_by_page.setdefault(page_idx, []).append(ev)
-
-            qa_pairs.append(
-                MultiPageQAPair(
-                    id=qa_id,
-                    question_text=meta.question,
-                    answer_text=meta.standard_answer,
-                    evidence_pages=sorted(doc_evidence_pages),
-                    evidence_sources=doc_evidence_sources,
-                    answer_format=meta.question_type,
-                )
-            )
-
         annotated_pages: list[SinglePageDocumentInstance] = []
-        for page_idx, page in enumerate(document.pages):
-            page_bboxes = bboxes_by_page.get(page_idx, [])
+        for global_idx, page in enumerate(all_pages):
+            page_bboxes = bboxes_by_global_page.get(global_idx, [])
             if page_bboxes:
                 annotated_pages.append(
                     page.add_annotation(annotation=self._bbox_annotation(page_bboxes))
@@ -339,18 +354,22 @@ class InputTransform:
             else:
                 annotated_pages.append(page)
 
-        metadata: dict[str, Any] = {
-            "doc_id": sample.doc_id,
-            "language": sample.qa_metas[0].language if sample.qa_metas else "en",
-            "domain": sample.qa_metas[0].description if sample.qa_metas else "",
+        sample_metadata: dict[str, Any] = {
+            "question_id": sample.question_id,
+            "doc_id": sample.question_id,
+            "dataset_type": sample.dataset_type,
+            "pdf_sources": [p.name for p in sample.pdf_paths],
+            "description": meta.description,
+            "language": meta.language,
         }
 
-        return replace(
-            document, pages=annotated_pages, metadata=metadata
+        return MultiPageDocumentInstance(
+            sample_id=sample.question_id,
+            pages=annotated_pages,
+            metadata=sample_metadata,
         ).add_annotation(
-            annotation=MultiPageQuestionAnsweringAnnotation(qa_pairs=qa_pairs)
+            annotation=MultiPageQuestionAnsweringAnnotation(qa_pairs=[qa_pair])
         )
-
 
 class CiteVQAConfig(DatasetConfig):
     max_samples: int | None = None

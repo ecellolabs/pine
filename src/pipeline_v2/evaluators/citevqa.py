@@ -63,11 +63,7 @@ class CiteVQAEvaluator(BaseEvaluator):
             logger.info(f"[CiteVQA] Evaluating split: {split_key.value}")
             split_records: list[dict[str, Any]] = []
 
-            anls_scores: list[float] = []
-            f1_scores: list[float] = []
-            em_scores: list[float] = []
-            saa_scores: list[float] = []
-            page_cite_acc_scores: list[float] = []
+            scores_by_type: dict[str, dict[str, list[float]]] = {}
 
             start_time = time.perf_counter()
             sample_count = 0
@@ -89,9 +85,10 @@ class CiteVQAEvaluator(BaseEvaluator):
 
                 sample_count += 1
                 doc_id = sample.metadata.get("doc_id", sample.sample_id)
+                dataset_type = sample.metadata.get("dataset_type", "Single-Doc")
                 logger.info(
-                    f"[{split_key.value}] Processing sample {sample_idx + 1}: doc_id={doc_id!r} "
-                    f"({len(sample.pages)} pages)"
+                    f"[{split_key.value}] Processing sample {sample_idx + 1}: question_id={sample.sample_id!r} "
+                    f"type={dataset_type!r} ({len(sample.pages)} total pages)"
                 )
 
                 # Optional Docling layout parsing integration
@@ -143,13 +140,11 @@ class CiteVQAEvaluator(BaseEvaluator):
                     if not gold_evidence_pages:
                         page_match = True
                     else:
-                        # Ground truth page match (intersection over union or subset match)
                         page_match = bool(
                             set(predicted_pages).intersection(set(gold_evidence_pages))
                         )
 
                     page_cite_acc = 1.0 if page_match else 0.0
-                    # Strict Attributed Accuracy (SAA): Both answer (ANLS >= 0.5) AND citation match
                     saa = 1.0 if (anls >= 0.5 and page_match) else 0.0
 
                     anls_scores.append(anls)
@@ -158,7 +153,19 @@ class CiteVQAEvaluator(BaseEvaluator):
                     saa_scores.append(saa)
                     page_cite_acc_scores.append(page_cite_acc)
 
+                    type_entry = scores_by_type.setdefault(
+                        dataset_type,
+                        {"anls": [], "f1": [], "em": [], "saa": [], "pca": []},
+                    )
+                    type_entry["anls"].append(anls)
+                    type_entry["f1"].append(f1)
+                    type_entry["em"].append(em)
+                    type_entry["saa"].append(saa)
+                    type_entry["pca"].append(page_cite_acc)
+
                     record = {
+                        "question_id": sample.sample_id,
+                        "dataset_type": dataset_type,
                         "doc_id": doc_id,
                         "qa_id": qa.id,
                         "question": question,
@@ -190,14 +197,27 @@ class CiteVQAEvaluator(BaseEvaluator):
                 sum(page_cite_acc_scores) / num_questions if num_questions else 0.0
             )
 
+            by_type_summary: dict[str, dict[str, float]] = {}
+            for d_type, scores in scores_by_type.items():
+                n_type = len(scores["anls"])
+                by_type_summary[d_type] = {
+                    "count": n_type,
+                    "mean_anls": round(sum(scores["anls"]) / n_type, 4) if n_type else 0.0,
+                    "mean_f1": round(sum(scores["f1"]) / n_type, 4) if n_type else 0.0,
+                    "mean_em": round(sum(scores["em"]) / n_type, 4) if n_type else 0.0,
+                    "mean_saa": round(sum(scores["saa"]) / n_type, 4) if n_type else 0.0,
+                    "mean_page_citation_acc": round(sum(scores["pca"]) / n_type, 4) if n_type else 0.0,
+                }
+
             split_summary = {
-                "num_docs": sample_count,
+                "num_samples": sample_count,
                 "num_questions": num_questions,
                 "mean_anls": round(mean_anls, 4),
                 "mean_f1": round(mean_f1, 4),
                 "mean_em": round(mean_em, 4),
                 "mean_saa": round(mean_saa, 4),
                 "mean_page_citation_acc": round(mean_pca, 4),
+                "by_dataset_type": by_type_summary,
                 "elapsed_seconds": round(elapsed, 2),
                 "questions_per_second": round(num_questions / elapsed, 2)
                 if elapsed > 0
@@ -209,14 +229,21 @@ class CiteVQAEvaluator(BaseEvaluator):
             print("\n" + "=" * 60)
             print(f"EVALUATION RESULTS - [CITEVQA / {split_key.value.upper()}]")
             print("=" * 60)
-            print(f"Total Documents Evaluated:     {split_summary['num_docs']}")
-            print(f"Total Questions Evaluated:     {split_summary['num_questions']}")
-            print(f"Average ANLS:                  {mean_anls * 100:.2f}%")
-            print(f"Average Token F1:              {mean_f1 * 100:.2f}%")
-            print(f"Exact Match (EM):              {mean_em * 100:.2f}%")
+            print(f"Total Question Samples Evaluated: {split_summary['num_questions']}")
+            print(f"Average ANLS:                     {mean_anls * 100:.2f}%")
+            print(f"Average Token F1:                 {mean_f1 * 100:.2f}%")
+            print(f"Exact Match (EM):                 {mean_em * 100:.2f}%")
             print(f"Strict Attributed Accuracy (SAA): {mean_saa * 100:.2f}%")
-            print(f"Page Citation Accuracy:        {mean_pca * 100:.2f}%")
-            print(f"Elapsed Time:                  {elapsed:.2f}s")
+            print(f"Page Citation Accuracy:           {mean_pca * 100:.2f}%")
+            if by_type_summary:
+                print("-" * 60)
+                print("Breakdown by Dataset Type:")
+                for d_type, stats in by_type_summary.items():
+                    print(
+                        f"  [{d_type}] (N={stats['count']}) "
+                        f"SAA: {stats['mean_saa']*100:.2f}% | ANLS: {stats['mean_anls']*100:.2f}%"
+                    )
+            print(f"Elapsed Time:                     {elapsed:.2f}s")
             print("=" * 60 + "\n")
 
         report = {

@@ -91,13 +91,25 @@ def test_evidence_and_row_meta_parsing() -> None:
 
 def test_input_transform_missing_pdf() -> None:
     transform = InputTransform()
+    qa_meta = _RowMeta(
+        question_id="q_missing",
+        question_type="Factoid",
+        question="Where is it?",
+        standard_answer="Unknown",
+        evidence_list=[],
+        dataset_type="Single-Doc",
+        description="Test",
+        language="en",
+        pdf_sources=["missing.pdf"],
+    )
     sample = _Sample(
-        doc_id="missing.pdf",
-        pdf_path=Path("/nonexistent/path/missing.pdf"),
-        qa_metas=[],
+        question_id="q_missing",
+        dataset_type="Single-Doc",
+        pdf_paths=[Path("/nonexistent/path/missing.pdf")],
+        qa_meta=qa_meta,
     )
     with pytest.raises(
-        FileNotFoundError, match="PDF file for sample 'missing.pdf' not found"
+        FileNotFoundError, match="PDF file for sample 'q_missing' not found"
     ):
         transform(sample)
 
@@ -105,30 +117,45 @@ def test_input_transform_missing_pdf() -> None:
 def test_input_transform_with_mocked_pdf(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Create a mock PDF file
-    dummy_pdf = tmp_path / "test_doc.pdf"
-    dummy_pdf.write_bytes(b"%PDF-1.4 dummy content")
+    # Create mock PDF files
+    dummy_pdf1 = tmp_path / "test_doc1.pdf"
+    dummy_pdf1.write_bytes(b"%PDF-1.4 dummy content 1")
+    dummy_pdf2 = tmp_path / "test_doc2.pdf"
+    dummy_pdf2.write_bytes(b"%PDF-1.4 dummy content 2")
 
-    # Mock MultiPageDocumentInstance.from_pdf to return 2 dummy pages
     p0 = SinglePageDocumentInstance(
-        sample_id="test_doc.pdf#0", visual=MagicMock(), metadata={}
+        sample_id="test_doc1.pdf#0", visual=MagicMock(), metadata={}
     )
     p1 = SinglePageDocumentInstance(
-        sample_id="test_doc.pdf#1", visual=MagicMock(), metadata={}
+        sample_id="test_doc1.pdf#1", visual=MagicMock(), metadata={}
     )
-    mock_doc = MultiPageDocumentInstance(
-        sample_id="test_doc.pdf",
+    mock_doc1 = MultiPageDocumentInstance(
+        sample_id="test_doc1.pdf",
         pages=[p0, p1],
         metadata={},
     )
+    p2 = SinglePageDocumentInstance(
+        sample_id="test_doc2.pdf#0", visual=MagicMock(), metadata={}
+    )
+    mock_doc2 = MultiPageDocumentInstance(
+        sample_id="test_doc2.pdf",
+        pages=[p2],
+        metadata={},
+    )
+
+    def mock_from_pdf(path: Path, sample_id: str) -> MultiPageDocumentInstance:
+        if "test_doc1" in path.name:
+            return mock_doc1
+        return mock_doc2
+
     monkeypatch.setattr(
         MultiPageDocumentInstance,
         "from_pdf",
-        lambda path, sample_id: mock_doc,
+        mock_from_pdf,
     )
 
     qa_meta = _RowMeta(
-        question_id="0",
+        question_id="q_001",
         question_type="Factoid",
         question="What is the test result?",
         standard_answer="Positive",
@@ -137,45 +164,55 @@ def test_input_transform_with_mocked_pdf(
                 type="text",
                 content="Result is Positive",
                 bbox=[100.0, 50.0, 200.0, 150.0],
-                source_pdf_name="test_doc.pdf",
-                source_page_id=2,  # 1-indexed page 2 -> 0-indexed page 1
+                source_pdf_name="test_doc1.pdf",
+                source_page_id=2,  # 1-indexed page 2 in doc1 -> global page 1
                 source_doc_index=1,
                 necessity="necessary",
-            )
+            ),
+            _EvidenceMeta(
+                type="table",
+                content="Evidence table in doc2",
+                bbox=[300.0, 100.0, 400.0, 200.0],
+                source_pdf_name="test_doc2.pdf",
+                source_page_id=1,  # 1-indexed page 1 in doc2 -> global page 2
+                source_doc_index=2,
+                necessity="necessary",
+            ),
         ],
-        dataset_type="Single-Doc",
+        dataset_type="N-to-N-Gold",
         description="Medical Report",
         language="en",
-        pdf_sources=["test_doc.pdf"],
+        pdf_sources=["test_doc1.pdf", "test_doc2.pdf"],
     )
 
     sample = _Sample(
-        doc_id="test_doc.pdf",
-        pdf_path=dummy_pdf,
-        qa_metas=[qa_meta],
+        question_id="q_001",
+        dataset_type="N-to-N-Gold",
+        pdf_paths=[dummy_pdf1, dummy_pdf2],
+        qa_meta=qa_meta,
     )
 
     transform = InputTransform()
     doc_instance = transform(sample)
 
-    assert doc_instance.sample_id == "test_doc.pdf"
-    assert doc_instance.metadata["doc_id"] == "test_doc.pdf"
-    assert doc_instance.metadata["language"] == "en"
-    assert doc_instance.metadata["domain"] == "Medical Report"
-    assert len(doc_instance.pages) == 2
+    assert doc_instance.sample_id == "q_001"
+    assert doc_instance.metadata["question_id"] == "q_001"
+    assert doc_instance.metadata["dataset_type"] == "N-to-N-Gold"
+    assert doc_instance.metadata["pdf_sources"] == ["test_doc1.pdf", "test_doc2.pdf"]
+    assert len(doc_instance.pages) == 3  # 2 pages from doc1 + 1 page from doc2
 
-    # Page 0 has no evidence, Page 1 has object detection annotation
+    # Page annotations
     assert not doc_instance.pages[0].has_annotation_type(
         AnnotationType.object_detection
     )
     assert doc_instance.pages[1].has_annotation_type(AnnotationType.object_detection)
+    assert doc_instance.pages[2].has_annotation_type(AnnotationType.object_detection)
 
     det_ann = doc_instance.pages[1].get_annotation_by_type(
         AnnotationType.object_detection
     )
     assert isinstance(det_ann, ObjectDetectionAnnotation)
     assert det_ann.bbox_mode == BoundingBoxMode.XYXY
-    # Check bbox conversion: [ymin, xmin, ymax, xmax] -> [xmin, ymin, xmax, ymax]
     np.testing.assert_allclose(det_ann.bboxes[0], [50.0, 100.0, 150.0, 200.0])
 
     # QA annotation
@@ -191,8 +228,8 @@ def test_input_transform_with_mocked_pdf(
     assert qa_pair.id == 0
     assert qa_pair.question_text == "What is the test result?"
     assert qa_pair.answer_text == "Positive"
-    assert qa_pair.evidence_pages == [1]  # 0-indexed
-    assert qa_pair.evidence_sources == ["text"]
+    assert qa_pair.evidence_pages == [1, 2]  # global 0-indexed page positions
+    assert qa_pair.evidence_sources == ["text", "table"]
 
 
 from PIL import Image
