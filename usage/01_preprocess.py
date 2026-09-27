@@ -29,9 +29,13 @@ _worker_transform: DoclingTransform | None = None
 _worker_out_dir: Path | None = None
 
 
-def _init_worker(api_url: str, options: DoclingApiOptions, out_dir: Path) -> None:
+def _init_worker(
+    api_url: str, options: DoclingApiOptions, out_dir: Path, timeout: float = 600.0
+) -> None:
     global _worker_transform, _worker_out_dir
-    _worker_transform = DoclingTransform(api_url=api_url, options=options)
+    _worker_transform = DoclingTransform(
+        api_url=api_url, options=options, timeout=timeout
+    )
     _worker_out_dir = out_dir
 
 
@@ -41,6 +45,11 @@ def _process_sample(
     out_dir: Path,
 ) -> None:
     logger.info(f"sample_id={sample.sample_id!r} key={sample.key!r}")
+    if not sample.pages or sample.metadata.get("invalid_pdf"):
+        logger.warning(
+            f"Skipping sample_id={sample.sample_id!r}: empty or invalid PDF"
+        )
+        return
     sample_dir = out_dir / sample.key
     sample_dir.mkdir(parents=True, exist_ok=True)
     for page in sample.pages:
@@ -48,9 +57,14 @@ def _process_sample(
         if out_path.exists():
             logger.info(f"skip page_id={page.sample_id!r} -> {out_path}")
             continue
-        document = transform(page)
-        out_path.write_text(json.dumps(document.export_to_dict()))
-        logger.info(f"page_id={page.sample_id!r} key={page.key!r} -> {out_path}")
+        try:
+            document = transform(page)
+            out_path.write_text(json.dumps(document.export_to_dict()))
+            logger.info(f"page_id={page.sample_id!r} key={page.key!r} -> {out_path}")
+        except Exception as err:  # noqa: BLE001
+            logger.error(
+                f"Failed to process page_id={page.sample_id!r} (key={page.key!r}): {err}. Skipping page."
+            )
 
 
 def _process_sample_worker(sample: MultiPageDocumentInstance) -> None:
@@ -70,6 +84,7 @@ class Preprocessor:
     api_url: str
     options: DoclingApiOptions = field(default_factory=DoclingApiOptions)
     num_workers: int = 1
+    timeout: float = 600.0
 
     def _process_sample(
         self,
@@ -77,7 +92,9 @@ class Preprocessor:
         transform: DoclingTransform | None = None,
     ) -> None:
         if transform is None:
-            transform = DoclingTransform(api_url=self.api_url, options=self.options)
+            transform = DoclingTransform(
+                api_url=self.api_url, options=self.options, timeout=self.timeout
+            )
         _process_sample(sample, transform, self.out_dir)
 
     def run(self, split_iterator: Iterable[MultiPageDocumentInstance]) -> None:
@@ -85,7 +102,7 @@ class Preprocessor:
 
         if self.num_workers <= 1:
             with DoclingTransform(
-                api_url=self.api_url, options=self.options
+                api_url=self.api_url, options=self.options, timeout=self.timeout
             ) as transform:
                 for sample in split_iterator:
                     _process_sample(sample, transform, self.out_dir)
@@ -94,7 +111,7 @@ class Preprocessor:
         with mp.Pool(
             self.num_workers,
             initializer=_init_worker,
-            initargs=(self.api_url, self.options, self.out_dir),
+            initargs=(self.api_url, self.options, self.out_dir, self.timeout),
         ) as pool:
             for _ in pool.imap_unordered(_process_sample_worker, split_iterator):
                 pass
@@ -113,6 +130,12 @@ def main() -> None:
         help="Maximum number of samples/decks to preprocess.",
     )
     parser.add_argument("--num-workers", type=int, default=1)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        help="Per-page Docling API timeout in seconds (default: 600.0).",
+    )
     env_api_url = os.getenv("DOCLING_API_URL")
     parser.add_argument(
         "--api-url",
@@ -157,6 +180,7 @@ def main() -> None:
             api_url=args.api_url,
             options=api_options,
             num_workers=args.num_workers,
+            timeout=args.timeout,
         )
         preprocessor.run(split_iterator)
 

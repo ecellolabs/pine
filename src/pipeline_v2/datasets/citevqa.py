@@ -177,51 +177,37 @@ class SplitIterator(Sequence[_Sample]):
         if not missing_doc_ids:
             return
 
-        urls_to_download = [
-            UrlSpec(
-                url=self._url_by_doc_id[doc_id],
-                url_ext=".pdf",
-                rel_output_file_path=f"pdfs/{doc_id}",
-            )
-            for doc_id in missing_doc_ids
-            if self._url_by_doc_id.get(doc_id)
-        ]
-        if urls_to_download:
-            manager = AtriaDownloadManager(
-                data_dir=self._pdf_dir.parent,
-                download_dir=self._pdf_dir.parent / ".download_cache",
-            )
-            for spec in urls_to_download:
-                try:
-                    manager.download_and_extract([spec], extract=False)
-                except Exception as e:  # noqa: BLE001
-                    # Fallback to direct request with User-Agent
-                    rel_path = spec.rel_output_file_path or ""
-                    dest_path = self._pdf_dir / Path(rel_path).name
-                    try:
-                        import requests
+        import requests
 
-                        resp = requests.get(
-                            spec.url,
-                            headers={"User-Agent": "Mozilla/5.0"},
-                            timeout=60,
-                            stream=True,
-                        )
-                        resp.raise_for_status()
-                        dest_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(dest_path, "wb") as f:
-                            for chunk in resp.iter_content(chunk_size=65536):
-                                if chunk:
-                                    f.write(chunk)
-                        logger.info(
-                            f"Downloaded {dest_path.name} via direct request fallback"
-                        )
-                    except Exception as err:  # noqa: BLE001
-                        logger.warning(
-                            f"Notice: PDF for {spec.rel_output_file_path} could not be downloaded: {err} (Atria error: {e}). "
-                            "To obtain the complete PDF archive, use ModelScope: "
-                            f"'modelscope download --dataset risemds/CiteVQA_PDF --local_dir {self._pdf_dir}'"
-                        )
+        session = requests.Session()
+        session.headers.update(
+            {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+
+        logger.info(
+            f"Checking / downloading {len(missing_doc_ids)} missing PDFs..."
+        )
+        for doc_id in missing_doc_ids:
+            url = self._url_by_doc_id.get(doc_id)
+            if not url:
+                continue
+            dest_path = self._pdf_path(doc_id)
+            if dest_path.exists():
+                continue
+
+            try:
+                resp = session.get(url, timeout=5, stream=True)
+                resp.raise_for_status()
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(dest_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(chunk)
+                logger.info(f"Downloaded PDF: {dest_path.name}")
+            except Exception as err:  # noqa: BLE001
+                logger.warning(
+                    f"Notice: PDF for {doc_id} could not be downloaded from {url} ({err}). Skipping."
+                )
 
     @overload
     def __getitem__(self, index: int) -> _Sample: ...
@@ -276,11 +262,11 @@ class InputTransform:
         for doc_idx, pdf_path in enumerate(sample.pdf_paths):
             pdf_name = pdf_path.name
             if not pdf_path.exists():
-                raise FileNotFoundError(
-                    f"PDF file for sample '{sample.question_id}' not found at '{pdf_path}'. "
-                    "CiteVQA PDFs can be acquired via ModelScope: "
-                    f"'modelscope download --dataset risemds/CiteVQA_PDF --local_dir {pdf_path.parent}'"
+                logger.warning(
+                    f"PDF file '{pdf_name}' for question '{sample.question_id}' not found at '{pdf_path}'. Skipping."
                 )
+                invalid_pdfs.append(pdf_name)
+                continue
 
             with open(pdf_path, "rb") as f:
                 header = f.read(5)

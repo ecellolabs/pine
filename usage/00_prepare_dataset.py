@@ -70,7 +70,20 @@ def prepare_dataset(
         logger.info(f"[{split_key.value}] {len(samples)} samples")
         if not visualize_samples or len(samples) == 0:
             continue
-        sample = samples[0].load()
+
+        sample = None
+        for item in samples:
+            loaded = item.load()
+            if len(loaded.pages) > 0 and not loaded.metadata.get("invalid_pdf"):
+                sample = loaded
+                break
+
+        if sample is None or len(sample.pages) == 0:
+            logger.warning(
+                f"[{split_key.value}] No valid sample with pages found for visualization."
+            )
+            continue
+
         sample_dir = Path(output_dir) / name / split_key.value
         sample_dir.mkdir(parents=True, exist_ok=True)
         visualize(sample, output_dir=str(sample_dir))

@@ -108,10 +108,9 @@ def test_input_transform_missing_pdf() -> None:
         pdf_paths=[Path("/nonexistent/path/missing.pdf")],
         qa_meta=qa_meta,
     )
-    with pytest.raises(
-        FileNotFoundError, match="PDF file for sample 'q_missing' not found"
-    ):
-        transform(sample)
+    res = transform(sample)
+    assert res.metadata.get("invalid_pdf") is True
+    assert len(res.pages) == 0
 
 
 def test_input_transform_with_mocked_pdf(
