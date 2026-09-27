@@ -150,7 +150,7 @@ class DoclingTransform:
                 return result.document.json_content
         except DoclingApiError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise DoclingApiError(
                 f"Failed to parse Docling API response with Pydantic: {exc}"
             ) from exc

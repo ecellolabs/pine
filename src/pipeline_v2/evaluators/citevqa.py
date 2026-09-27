@@ -64,6 +64,11 @@ class CiteVQAEvaluator(BaseEvaluator):
             split_records: list[dict[str, Any]] = []
 
             scores_by_type: dict[str, dict[str, list[float]]] = {}
+            anls_scores: list[float] = []
+            f1_scores: list[float] = []
+            em_scores: list[float] = []
+            saa_scores: list[float] = []
+            page_cite_acc_scores: list[float] = []
 
             start_time = time.perf_counter()
             sample_count = 0
@@ -84,8 +89,8 @@ class CiteVQAEvaluator(BaseEvaluator):
                     continue
 
                 sample_count += 1
-                doc_id = sample.metadata.get("doc_id", sample.sample_id)
-                dataset_type = sample.metadata.get("dataset_type", "Single-Doc")
+                doc_id = str(sample.metadata.get("doc_id", sample.sample_id))
+                dataset_type = str(sample.metadata.get("dataset_type", "Single-Doc"))
                 logger.info(
                     f"[{split_key.value}] Processing sample {sample_idx + 1}: question_id={sample.sample_id!r} "
                     f"type={dataset_type!r} ({len(sample.pages)} total pages)"
@@ -202,11 +207,17 @@ class CiteVQAEvaluator(BaseEvaluator):
                 n_type = len(scores["anls"])
                 by_type_summary[d_type] = {
                     "count": n_type,
-                    "mean_anls": round(sum(scores["anls"]) / n_type, 4) if n_type else 0.0,
+                    "mean_anls": round(sum(scores["anls"]) / n_type, 4)
+                    if n_type
+                    else 0.0,
                     "mean_f1": round(sum(scores["f1"]) / n_type, 4) if n_type else 0.0,
                     "mean_em": round(sum(scores["em"]) / n_type, 4) if n_type else 0.0,
-                    "mean_saa": round(sum(scores["saa"]) / n_type, 4) if n_type else 0.0,
-                    "mean_page_citation_acc": round(sum(scores["pca"]) / n_type, 4) if n_type else 0.0,
+                    "mean_saa": round(sum(scores["saa"]) / n_type, 4)
+                    if n_type
+                    else 0.0,
+                    "mean_page_citation_acc": round(sum(scores["pca"]) / n_type, 4)
+                    if n_type
+                    else 0.0,
                 }
 
             split_summary = {
@@ -241,7 +252,7 @@ class CiteVQAEvaluator(BaseEvaluator):
                 for d_type, stats in by_type_summary.items():
                     print(
                         f"  [{d_type}] (N={stats['count']}) "
-                        f"SAA: {stats['mean_saa']*100:.2f}% | ANLS: {stats['mean_anls']*100:.2f}%"
+                        f"SAA: {stats['mean_saa'] * 100:.2f}% | ANLS: {stats['mean_anls'] * 100:.2f}%"
                     )
             print(f"Elapsed Time:                     {elapsed:.2f}s")
             print("=" * 60 + "\n")

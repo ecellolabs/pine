@@ -184,9 +184,7 @@ class SplitIterator(Sequence[_Sample]):
             {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         )
 
-        logger.info(
-            f"Checking / downloading {len(missing_doc_ids)} missing PDFs..."
-        )
+        logger.info(f"Checking / downloading {len(missing_doc_ids)} missing PDFs...")
         for doc_id in missing_doc_ids:
             url = self._url_by_doc_id.get(doc_id)
             if not url:
@@ -303,7 +301,7 @@ class InputTransform:
                     "question_id": sample.question_id,
                     "dataset_type": sample.dataset_type,
                     "invalid_pdf": True,
-                    "invalid_pdfs": invalid_pdfs,
+                    "invalid_pdfs": ", ".join(invalid_pdfs),
                 },
             )
 
@@ -356,6 +354,7 @@ class InputTransform:
         ).add_annotation(
             annotation=MultiPageQuestionAnsweringAnnotation(qa_pairs=[qa_pair])
         )
+
 
 class CiteVQAConfig(DatasetConfig):
     max_samples: int | None = None
