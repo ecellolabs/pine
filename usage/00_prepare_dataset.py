@@ -14,25 +14,26 @@ from atria_core.visualizers import visualize
 from tqdm import tqdm
 
 from pipeline_v2.datasets import *
+from pipeline_v2.sampling import dataset_load_kwargs, describe, resolve_max_samples
 
 logger = get_logger(__name__)
 
 
 def benchmark_dataset(dataset: Any, n: int = 10) -> None:
     """Iterate over all splits, time each sample load, and log min/max/avg."""
-    for split, split_iterator in dataset.split_iterators.items():
+    for split_key, split_iterator in dataset.split_iterators.items():
         samples: Any = split_iterator
         count = min(len(samples), n)
         if count == 0:
             continue
-        logger.info(f"[{split.value}] benchmarking {count} samples")
+        logger.info(f"[{split_key.value}] benchmarking {count} samples")
         times: list[float] = []
-        for i in tqdm(range(count), desc=f"benchmark[{split.value}]"):
+        for i in tqdm(range(count), desc=f"benchmark[{split_key.value}]"):
             t0 = time.perf_counter()
             samples[i].load()
             times.append(time.perf_counter() - t0)
         logger.info(
-            f"[{split.value}] n={count}"
+            f"[{split_key.value}] n={count}"
             f"  min={min(times):.3f}s"
             f"  max={max(times):.3f}s"
             f"  avg={sum(times) / len(times):.3f}s"
@@ -47,15 +48,17 @@ def prepare_dataset(
     visualize_samples: bool = True,
     benchmark: bool = False,
     data_dir: str | None = None,
-    max_samples: int | None = None,
+    max_samples: str | int | None = None,
     split: DatasetSplitType | None = None,
     **dataset_kwargs: Any,
 ) -> None:
     """Load and cache a dataset, then inspect the first sample of each split."""
+    resolved = resolve_max_samples(max_samples)
+    logger.info(f"Selection: {describe(resolved)}")
+    dataset_kwargs = {**dataset_load_kwargs(resolved, name), **dataset_kwargs}
     dataset = DatasetBuilder().load(
         name,
         data_dir=data_dir,
-        max_samples=max_samples,
         split=split,
         **dataset_kwargs,
     )
@@ -67,18 +70,18 @@ def prepare_dataset(
 
     for split, split_iterator in dataset.split_iterators.items():
         samples: Any = split_iterator
-        logger.info(f"[{split.value}] {len(samples)} samples")
+        logger.info(f"[{split_key.value}] {len(samples)} samples")
         if not visualize_samples or len(samples) == 0:
             continue
         sample = samples[0].load()
-        sample_dir = Path(output_dir) / name / split.value
+        sample_dir = Path(output_dir) / name / split_key.value
         sample_dir.mkdir(parents=True, exist_ok=True)
         visualize(sample, output_dir=str(sample_dir))
         logger.info(
-            f"[{split.value}] first sample: sample_id={sample.sample_id!r}"
+            f"[{split_key.value}] first sample: sample_id={sample.sample_id!r}"
             f" num_pages={len(sample.pages)}"
         )
-        logger.info(f"First sample of split `{split}`:\n {sample}")
+        logger.info(f"First sample of split `{split_key}`:\n {sample}")
 
     if benchmark:
         benchmark_dataset(dataset)
@@ -94,9 +97,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--max-samples",
-        type=int,
+        type=str,
         default=None,
-        help="Maximum number of samples/decks to load and cache.",
+        help=(
+            "Integer N = first N samples/decks; a name like 's0' = the exact "
+            "documents listed in sample_sets/s0.json (see pipeline_v2.sampling)."
+        ),
     )
     parser.add_argument(
         "--enable-caching", action=argparse.BooleanOptionalAction, default=True
@@ -117,6 +123,7 @@ def main() -> None:
         data_dir=args.data_dir,
         max_samples=args.max_samples,
     )
+
 
 if __name__ == "__main__":
     main()

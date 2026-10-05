@@ -107,7 +107,9 @@ def evaluate_dataset(
             "mean_f1": round(mean_f1, 4),
             "mean_em": round(mean_em, 4),
             "elapsed_seconds": round(elapsed, 2),
-            "questions_per_second": round(num_questions / elapsed, 2) if elapsed > 0 else 0.0,
+            "questions_per_second": round(num_questions / elapsed, 2)
+            if elapsed > 0
+            else 0.0,
             "records": split_records,
         }
         results_by_split[split_key.value] = split_summary

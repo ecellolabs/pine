@@ -4,7 +4,17 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["atria-core", "docling-core>=2.97.0", "httpx>=0.28.0"]
+dependencies = [
+    "atria-core",
+    "docling>=2.60",
+    "docling-core>=2.97.0",
+    "httpx>=0.28.0",
+    "markdown-it-py>=3.0",
+    "pandas>=2.2",
+    "pydantic-ai-slim[openai]>=1.0",
+    "pymupdf>=1.25",
+    "rapidocr>=3.0",
+]
 
 [tool.uv.sources]
 atria-core = { git = "https://github.com/atriaml/atria_core.git" }

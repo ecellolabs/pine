@@ -153,10 +153,12 @@ class QwenVLModel:
         # Encode slide images in order
         for img in images:
             data_uri = pil_to_base64_data_uri(img)
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": data_uri},
-            })
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_uri},
+                }
+            )
 
         prompt_text = (
             f"Question: {question}\n"

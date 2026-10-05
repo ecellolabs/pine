@@ -1,0 +1,27 @@
+{
+  "name": "s0",
+  "dataset": "mmlongbench_doc",
+  "description": "The three MMLongBench-Doc samples used for the 5 Oct 2026 end-to-end pipeline test (parser -> index -> planner -> orchestrator -> verifier -> official scorer). One easy text lookup, one figure question whose gold answer is 'Not answerable', one image-only slide deck with a pie-chart value.",
+  "created": "2026-10-05",
+  "author": "Muhammad Talal Majeed",
+  "samples": [
+    {
+      "run_id": "run1_isro_text",
+      "doc_id": "fdac8d1e9ef56519371df7e6532df27d.pdf",
+      "question": "What is NARL stand for in this document?",
+      "why_chosen": "Born-digital text report (20 pages). Single-page pure-text evidence. Tests parser text extraction, index navigation and grounding on the easiest case."
+    },
+    {
+      "run_id": "run2_raptor_figure_unanswerable",
+      "doc_id": "2401.18059v1.pdf",
+      "question": "In Figure 1's demonstration, what are the color of the nodes that appear in all three clusters?",
+      "why_chosen": "Academic paper (23 pages). Requires inspecting Figure 1 as an image; the correct output is abstention (Not answerable). Tests the image tool and the verifier's abstention."
+    },
+    {
+      "run_id": "run3_appota_scanned_chart",
+      "doc_id": "reportq32015-151009093138-lva1-app6891_95.pdf",
+      "question": "Regarding the global iOS breakdown, what percentage of the pie chart was iOS 9?",
+      "why_chosen": "Slide deck with NO text layer (34 pages, image-only). Parser must OCR; index must locate the iOS breakdown slide; answer sits in a pie chart. Tests OCR, index and chart reading."
+    }
+  ]
+}

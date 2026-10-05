@@ -153,7 +153,9 @@ def test_docling_transform_http_error() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     transform = DoclingTransform(api_url=MOCK_API_URL, client=client)
 
-    with pytest.raises(DoclingApiError, match="Docling API request failed with status 500"):
+    with pytest.raises(
+        DoclingApiError, match="Docling API request failed with status 500"
+    ):
         transform.convert_bytes(b"dummy bytes")
 
 

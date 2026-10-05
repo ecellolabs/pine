@@ -19,6 +19,7 @@ from pipeline_v2.models.qwen import (
     QwenVLConfig,
     QwenVLModel,
 )
+from pipeline_v2.sampling import dataset_load_kwargs, describe, resolve_max_samples
 
 logger = get_logger(__name__)
 
@@ -66,9 +67,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--max-samples",
-        type=int,
+        type=str,
         default=None,
-        help="Maximum number of decks to evaluate (ideal for fast pilot runs).",
+        help=(
+            "Integer N = first N decks (ideal for fast pilot runs); a name like "
+            "'s0' = the exact documents listed in sample_sets/s0.json."
+        ),
     )
     parser.add_argument(
         "--max-tokens",
@@ -127,11 +131,17 @@ def main() -> None:
         if not ok:
             print("\n" + "!" * 80, file=sys.stderr)
             print(f"[PREFLIGHT FAILED] {conn_msg}", file=sys.stderr)
-            print("Please specify the active vLLM vision endpoint using:", file=sys.stderr)
+            print(
+                "Please specify the active vLLM vision endpoint using:", file=sys.stderr
+            )
             print("  --api-url http://<active-node>:<port>/v1", file=sys.stderr)
             print("Or export one of:", file=sys.stderr)
-            print("  export QWEN_API_URL=http://<active-node>:<port>/v1", file=sys.stderr)
-            print("  export VLM_BASE_URL=http://<active-node>:<port>/v1", file=sys.stderr)
+            print(
+                "  export QWEN_API_URL=http://<active-node>:<port>/v1", file=sys.stderr
+            )
+            print(
+                "  export VLM_BASE_URL=http://<active-node>:<port>/v1", file=sys.stderr
+            )
             print("!" * 80 + "\n", file=sys.stderr)
             sys.exit(1)
         logger.info(f"[PREFLIGHT OK] {conn_msg}")
@@ -140,10 +150,12 @@ def main() -> None:
     logger.info(
         f"Loading dataset {args.name!r} (split={args.split}, max_samples={args.max_samples})"
     )
+    resolved = resolve_max_samples(args.max_samples)
+    logger.info(f"Selection: {describe(resolved)}")
     dataset = cast(
         Dataset[MultiPageDocumentInstance, DatasetConfig],
         DatasetBuilder()
-        .load(args.name, split=split, max_samples=args.max_samples)
+        .load(args.name, split=split, **dataset_load_kwargs(resolved, args.name))
         .build(),
     )
 

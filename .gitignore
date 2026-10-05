@@ -9,9 +9,12 @@ wheels/
 # Virtual environments
 .venv
 dataset_visualizations/
-.claude
+.claude/settings.local.json
 .DS_Store
 .mypy_cache
 .pytest_cache
 .coverage
 evaluation_results/
+
+# Agent runs (traces, PDF copies, LLM cache) - regenerate with usage/04_agent_qa.py
+agent_runs/

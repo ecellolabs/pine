@@ -73,6 +73,7 @@ class SplitIterator(Sequence[_Sample]):
         data_dir: str,
         split: DatasetSplitType,
         max_samples: int | None = None,
+        doc_ids: list[str] | None = None,
     ) -> None:
         from datasets import load_dataset
 
@@ -82,6 +83,16 @@ class SplitIterator(Sequence[_Sample]):
         logger.info(f"Grouping MMLongBench-Doc {split.value} split rows by document")
         self._row_indices_by_doc = self._index_rows_by_doc()
         self._doc_ids = list(self._row_indices_by_doc)  # used for PDF downloading only
+        if doc_ids:
+            # Explicit selection (sample sets): keep the requested order, skip
+            # unknown ids with a warning.
+            unknown = [d for d in doc_ids if d not in self._row_indices_by_doc]
+            if unknown:
+                logger.warning(
+                    f"MMLongBench-Doc: {len(unknown)} requested doc_id(s) are not in "
+                    f"the dataset and were skipped: {unknown}"
+                )
+            self._doc_ids = [d for d in doc_ids if d in self._row_indices_by_doc]
         if max_samples is not None:
             self._doc_ids = self._doc_ids[:max_samples]
 
@@ -179,6 +190,9 @@ class InputTransform:
 
 class MMLongBenchDocConfig(DatasetConfig):
     max_samples: int | None = None
+    # Explicit list of PDF file names (doc_id) to load, in order. Used by sample
+    # sets (`--max-samples s0`); see `pipeline_v2.sampling`.
+    doc_ids: list[str] | None = None
 
 
 @datasets.register
@@ -206,7 +220,10 @@ class MMLongBenchDoc(Dataset[MultiPageDocumentInstance, MMLongBenchDocConfig]):
         self, split: DatasetSplitType, data_dir: str
     ) -> SplitIterator:
         return SplitIterator(
-            data_dir=data_dir, split=split, max_samples=self.config.max_samples
+            data_dir=data_dir,
+            split=split,
+            max_samples=self.config.max_samples,
+            doc_ids=self.config.doc_ids,
         )
 
     def _build_input_transform(self) -> Callable[[_Sample], MultiPageDocumentInstance]:

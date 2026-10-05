@@ -74,9 +74,7 @@ class DoclingTransform:
     (layout analysis + OCR) on page images and returns a validated
     `DoclingDocument` tree."""
 
-    api_url: str = field(
-        default_factory=lambda: os.getenv("DOCLING_API_URL", "")
-    )
+    api_url: str = field(default_factory=lambda: os.getenv("DOCLING_API_URL", ""))
     options: DoclingApiOptions = field(default_factory=DoclingApiOptions)
     pipeline_options: Any = None
     timeout: float = 120.0

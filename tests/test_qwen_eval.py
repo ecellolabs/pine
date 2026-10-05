@@ -30,8 +30,13 @@ def test_resolve_urls() -> None:
         == "http://serv-100:10001/v1/chat/completions"
     )
 
-    assert resolve_models_url("http://serv-100:10001") == "http://serv-100:10001/v1/models"
-    assert resolve_models_url("http://serv-100:10001/v1") == "http://serv-100:10001/v1/models"
+    assert (
+        resolve_models_url("http://serv-100:10001") == "http://serv-100:10001/v1/models"
+    )
+    assert (
+        resolve_models_url("http://serv-100:10001/v1")
+        == "http://serv-100:10001/v1/models"
+    )
     assert (
         resolve_models_url("http://serv-100:10001/v1/chat/completions")
         == "http://serv-100:10001/v1/models"

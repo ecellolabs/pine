@@ -27,12 +27,16 @@ pipeline-v2/
 │       │   ├── slidevqa.py
 │       │   └── utils.py        # Manual download guards & exceptions
 │       ├── parsers/            # Document parsing engines
-│       │   └── docling.py      # Docling layout analysis & OCR transform
+│       │   └── docling.py      # Docling layout analysis & OCR transform (API)
+│       ├── sampling.py         # --max-samples: integer or sample-set name (sample_sets/*.json)
+│       ├── agent/              # parser, index, planner, orchestrator, verifier, scoring, runner, visual_samples
 │       └── processors/         # Downstream transforms & model integrations (e.g. LLMs)
 └── usage/                      # Sequential, stateless stage CLI drivers
     ├── 00_prepare_dataset.py   # Stage 0: Dataset ingestion, caching, & visualization
     ├── 01_preprocess.py        # Stage 1: Batch Docling OCR & layout parsing
-    └── 02_...                  # Stage 2+: Downstream components (indexing, LLM extraction)
+    ├── 03_evaluation.py        # Stage 3: single-pass VLM baseline (B0)
+    ├── 04_agent_qa.py          # Stage 4: grounded agentic DocQA (full / N docs / sample set)
+    └── 05_visual_samples.py    # Stage 5: self-contained HTML page for inspecting runs
 ```
 
 ---
@@ -149,6 +153,62 @@ python usage/03_evaluation.py slidevqa --max-samples 5 --mock
 - `--timeout` — per-request HTTP timeout in seconds (default: `120.0`).
 - `--output-file` — destination path to write summary metrics and per-question predictions JSON report.
 - `--mock` — enable mock inference for testing and CI validation without network calls.
+
+### Step 4 — `usage/04_agent_qa.py` (grounded agentic DocQA)
+
+Runs the full online loop of the proposal on MMLongBench-Doc: Docling parser → PageIndex-style
+hierarchical index → planner → tool-calling orchestrator (outline / BM25 search / read page /
+inspect page image / evidence ledger) → verifier (quote-in-page check + grounding verdict +
+abstention) → official MMLongBench-Doc scorer. Every question gets a fully traced folder.
+All agents are [Pydantic AI](https://ai.pydantic.dev) `Agent`s with typed outputs and `@agent.tool`
+tools (`src/pipeline_v2/agent/`); model calls go through a caching, cost-logging `WrapperModel`.
+
+```bash
+# the reference experiment: 3 fixed samples defined in sample_sets/s0.json (~$0.01 on OpenRouter)
+OPENROUTER_API_KEY=sk-or-... uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0
+
+# first 2 documents, all their questions          # the whole benchmark (1,091 questions)
+uv run usage/04_agent_qa.py mmlongbench_doc --max-samples 2
+uv run usage/04_agent_qa.py mmlongbench_doc
+
+# against a vLLM server instead of OpenRouter
+uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://serv-3334:10001/v1 \
+    --text-model Qwen/Qwen2.5-7B-Instruct --vision-model Qwen/Qwen2.5-VL-7B-Instruct
+```
+
+- `--max-samples` — **integer N**: the first N documents of the split (as everywhere else);
+  **a name such as `s0`**: the exact `(doc_id, question)` list in `sample_sets/s0.json`
+  (a `.json` path also works), so anyone can replicate the same experiment; **omitted**: the full dataset.
+  Integer selection also accepts `--questions-per-doc K`.
+- `--output-dir` (default `./agent_runs`) — one folder per question:
+  `00_input/` (question, gold, PDF copy, gold page thumbnails) · `01_parser/` (per-page Markdown,
+  `page_stats.json` with Docling-vs-native text diagnostics) · `02_index/` (`outline.md`, `index.json`,
+  page summaries) · `03_planner/` · `04_orchestrator/` (`trace_roundN.jsonl`, `tool_results/`,
+  `images_viewed/`, `anomalies_roundN.json`) · `05_evidence_verifier/` · `06_evaluation/result.json`,
+  plus `run.log`, `llm_calls.jsonl`, `cost.json`, `summary.md`; and `manifest.json` at the top.
+- `--api-url` / `--api-key` / `--text-model` / `--vision-model` — any OpenAI-compatible endpoint
+  (`$OPENROUTER_API_KEY` or `$QWEN_API_KEY` + `$QWEN_API_URL`). Defaults: OpenRouter,
+  `qwen/qwen-2.5-7b-instruct` for text roles and `qwen/qwen3-vl-8b-instruct` for page images
+  (Qwen2.5-VL-7B-Instruct is not served on OpenRouter).
+- `--docling-url` — use the cluster's Docling API instead of the in-process library (RapidOCR).
+- `--cache-dir` — LLM response cache (default `<output-dir>/.cache/llm`); identical requests are free.
+- `--max-rounds`, `--max-tool-calls` — agent budgets (default 2 rounds × 12 tool calls).
+
+### Step 5 — `usage/05_visual_samples.py`
+
+Builds `agent_runs/visual_samples.html`: a single self-contained page (no server, shareable) with one
+tab per run showing every step — parser bar chart and page Markdown, index tree and build attempts,
+plan, the orchestrator timeline with tool results and the exact images sent to the vision model,
+verifier quote checks, official score, per-call model costs and all logs. It is meant for inspecting a
+sample of runs and is capped at `--max-runs` (default 20).
+
+```bash
+uv run usage/05_visual_samples.py agent_runs
+uv run usage/05_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
+```
+
+`sample_sets/` also works with the other stages: `usage/00_prepare_dataset.py mmlongbench_doc --max-samples s0`
+and `usage/01_preprocess.py mmlongbench_doc --max-samples s0` load exactly the documents of the set.
 
 ### Pipeline Flow & Next Steps
 

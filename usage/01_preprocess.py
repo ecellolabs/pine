@@ -21,6 +21,7 @@ from pipeline_v2.parsers.docling import (
     DoclingApiOptions,
     DoclingTransform,
 )
+from pipeline_v2.sampling import dataset_load_kwargs, describe, resolve_max_samples
 
 logger = get_logger(__name__)
 
@@ -108,9 +109,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--max-samples",
-        type=int,
+        type=str,
         default=None,
-        help="Maximum number of samples/decks to preprocess.",
+        help=(
+            "Integer N = first N samples/decks; a name like 's0' = the exact "
+            "documents listed in sample_sets/s0.json (see pipeline_v2.sampling)."
+        ),
     )
     parser.add_argument("--num-workers", type=int, default=1)
     env_api_url = os.getenv("DOCLING_API_URL")
@@ -139,6 +143,8 @@ def main() -> None:
     args = parser.parse_args()
     split = DatasetSplitType(args.split) if args.split is not None else None
 
+    resolved = resolve_max_samples(args.max_samples)
+    logger.info(f"Selection: {describe(resolved)}")
     dataset = cast(
         Dataset[MultiPageDocumentInstance, DatasetConfig],
         DatasetBuilder()
@@ -146,7 +152,7 @@ def main() -> None:
             args.name,
             data_dir=args.data_dir,
             split=split,
-            max_samples=args.max_samples,
+            **dataset_load_kwargs(resolved, args.name),
         )
         .build(),
     )
