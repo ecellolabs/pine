@@ -34,20 +34,29 @@ def _extract_visual_elements(md_text: str) -> tuple[list[str], list[str], bool]:
         line_s = line.strip()
         if not line_s:
             continue
-        if re.search(r'\b(Figure|Fig)\.?\s*\d+[:\.]?', line_s, re.IGNORECASE):
+        if re.search(r"\b(Figure|Fig)\.?\s*\d+[:\.]?", line_s, re.IGNORECASE):
             figures.append(line_s[:150])
         elif line_s.startswith("![") and "]" in line_s:
-            caption = line_s[2:line_s.find("]")]
+            caption = line_s[2 : line_s.find("]")]
             if caption and caption.lower() != "image":
                 figures.append(caption[:150])
-        elif re.search(r'\bTable\s+\d+[:\.]?', line_s, re.IGNORECASE):
+        elif re.search(r"\bTable\s+\d+[:\.]?", line_s, re.IGNORECASE):
             tables.append(line_s[:150])
-        elif line_s.startswith("|") and not line_s.startswith("|---") and not line_s.startswith("| ---"):
+        elif (
+            line_s.startswith("|")
+            and not line_s.startswith("|---")
+            and not line_s.startswith("| ---")
+        ):
             cells = [c.strip() for c in line_s.split("|") if c.strip()]
             if cells and not tables and len(cells) > 1:
                 tables.append(f"Table columns: {', '.join(cells[:5])}")
 
-    has_visuals = len(figures) > 0 or len(tables) > 0 or ("<!-- image -->" in md_text) or ("![image" in md_text.lower())
+    has_visuals = (
+        len(figures) > 0
+        or len(tables) > 0
+        or ("<!-- image -->" in md_text)
+        or ("![image" in md_text.lower())
+    )
     return figures, tables, has_visuals
 
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
@@ -325,8 +334,12 @@ def run_index(
                         prompt_text += f"\n\nDETECTED VISUAL ASSETS ON THIS PAGE:\nFigures: {ext_figs}\nTables: {ext_tabs}\nMake sure to retain these exact figure and table titles in your response fields."
                     summary = summary_agent.run_sync(prompt_text).output
 
-                merged_figs = list(dict.fromkeys(getattr(summary, "figures", []) + ext_figs))
-                merged_tabs = list(dict.fromkeys(getattr(summary, "tables", []) + ext_tabs))
+                merged_figs = list(
+                    dict.fromkeys(getattr(summary, "figures", []) + ext_figs)
+                )
+                merged_tabs = list(
+                    dict.fromkeys(getattr(summary, "tables", []) + ext_tabs)
+                )
                 rec.update(
                     {
                         "title": summary.title.strip()[:120],
@@ -334,7 +347,10 @@ def run_index(
                         "keywords": [str(k) for k in summary.keywords][:10],
                         "figures": merged_figs,
                         "tables": merged_tabs,
-                        "has_visual_elements": getattr(summary, "has_visual_elements", False) or has_vis,
+                        "has_visual_elements": getattr(
+                            summary, "has_visual_elements", False
+                        )
+                        or has_vis,
                         "error": None,
                     }
                 )
@@ -356,7 +372,13 @@ def run_index(
                         "error": str(exc),
                     }
                 )
-            log.info("page %3d [%s] title=%r figures=%r", p, rec["source"], rec["title"], rec.get("figures"))
+            log.info(
+                "page %3d [%s] title=%r figures=%r",
+                p,
+                rec["source"],
+                rec["title"],
+                rec.get("figures"),
+            )
             out.write(json.dumps(rec, ensure_ascii=False) + "\n")
             pages[str(p)] = rec
 

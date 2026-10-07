@@ -22,15 +22,15 @@ class PageSummary(BaseModel):
     keywords: list[str] = Field(default_factory=list, description="5-10 keywords")
     figures: list[str] = Field(
         default_factory=list,
-        description="Verbatim figure captions and figure titles on this page (e.g. 'Figure 1: Tree construction process')"
+        description="Verbatim figure captions and figure titles on this page (e.g. 'Figure 1: Tree construction process')",
     )
     tables: list[str] = Field(
         default_factory=list,
-        description="Table titles, numbers or main headers on this page (e.g. 'Table 2: Ablation results')"
+        description="Table titles, numbers or main headers on this page (e.g. 'Table 2: Ablation results')",
     )
     has_visual_elements: bool = Field(
         default=False,
-        description="True if the page contains charts, diagrams, plots, tables, or figures"
+        description="True if the page contains charts, diagrams, plots, tables, or figures",
     )
 
 
