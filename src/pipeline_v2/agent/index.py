@@ -303,11 +303,21 @@ def run_index(
     with summaries_path.open("a", encoding="utf-8") as out:
         for st in stats["page_stats"]:
             p = st["page"]
-            if p in done:
-                pages[str(p)] = done[p]
-                continue
             md = (parser_dir / "pages" / f"page_{p:03d}.md").read_text(encoding="utf-8")
             ext_figs, ext_tabs, has_vis = _extract_visual_elements(md)
+            if p in done:
+                rec = done[p]
+                rec["figures"] = list(
+                    dict.fromkeys(rec.get("figures", []) + ext_figs)
+                )
+                rec["tables"] = list(
+                    dict.fromkeys(rec.get("tables", []) + ext_tabs)
+                )
+                rec["has_visual_elements"] = (
+                    rec.get("has_visual_elements", False) or has_vis
+                )
+                pages[str(p)] = rec
+                continue
             use_image = st["docling_chars"] < 40
             rec: dict[str, Any] = {
                 "page": p,

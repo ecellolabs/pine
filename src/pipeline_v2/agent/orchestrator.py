@@ -101,12 +101,19 @@ _tok = re.compile(r"[a-z0-9]+")
 
 def _tokens(s: str) -> list[str]:
     toks = _tok.findall(s.lower())
-    matches = re.findall(r"\b(figure|fig|table)\s*(\d+)\b", s.lower())
+    matches = re.findall(r"\b(figure|fig|table|tab)\s*(\d+)\b", s.lower())
     for tag, num in matches:
-        toks.append(f"{tag}{num}")
-        toks.append(f"fig{num}")
-        toks.append(f"figure{num}")
-    return toks
+        clean_num = str(int(num))
+        num_pad = f"{int(num):02d}"
+        if tag in ("figure", "fig"):
+            for nv in (num, clean_num, num_pad):
+                toks.append(f"figure{nv}")
+                toks.append(f"fig{nv}")
+        elif tag in ("table", "tab"):
+            for nv in (num, clean_num, num_pad):
+                toks.append(f"table{nv}")
+                toks.append(f"tab{nv}")
+    return list(dict.fromkeys(toks))
 
 
 class BM25:
