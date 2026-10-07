@@ -20,9 +20,35 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+def _extract_visual_elements(md_text: str) -> tuple[list[str], list[str], bool]:
+    """Extract figure captions, table titles/headers, and check for visual elements in page markdown."""
+    figures: list[str] = []
+    tables: list[str] = []
+    for line in md_text.splitlines():
+        line_s = line.strip()
+        if not line_s:
+            continue
+        if re.search(r'\b(Figure|Fig)\.?\s*\d+[:\.]?', line_s, re.IGNORECASE):
+            figures.append(line_s[:150])
+        elif line_s.startswith("![") and "]" in line_s:
+            caption = line_s[2:line_s.find("]")]
+            if caption and caption.lower() != "image":
+                figures.append(caption[:150])
+        elif re.search(r'\bTable\s+\d+[:\.]?', line_s, re.IGNORECASE):
+            tables.append(line_s[:150])
+        elif line_s.startswith("|") and not line_s.startswith("|---") and not line_s.startswith("| ---"):
+            cells = [c.strip() for c in line_s.split("|") if c.strip()]
+            if cells and not tables and len(cells) > 1:
+                tables.append(f"Table columns: {', '.join(cells[:5])}")
+
+    has_visuals = len(figures) > 0 or len(tables) > 0 or ("<!-- image -->" in md_text) or ("![image" in md_text.lower())
+    return figures, tables, has_visuals
 
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -184,8 +210,20 @@ def _outline_md(index: dict[str, Any]) -> str:
             else:
                 for p in range(s["start_page"], s["end_page"] + 1):
                     ps = index["pages"][str(p)]
+                    vis_tag = ""
+                    figs = ps.get("figures") or []
+                    tabs = ps.get("tables") or []
+                    if figs or tabs or ps.get("has_visual_elements"):
+                        v_details = []
+                        if figs:
+                            v_details.append(f"Figures: {', '.join(figs)}")
+                        if tabs:
+                            v_details.append(f"Tables: {', '.join(tabs)}")
+                        if not v_details:
+                            v_details.append("Visuals")
+                        vis_tag = f" [{'; '.join(v_details)}]"
                     lines.append(
-                        f"{'  ' * (depth + 1)}- p{p}: {ps['title']} [{ps['source']}]"
+                        f"{'  ' * (depth + 1)}- p{p}: {ps['title']} [{ps['source']}]{vis_tag}"
                     )
 
     walk(index["sections"], 0)
@@ -259,13 +297,14 @@ def run_index(
                 pages[str(p)] = done[p]
                 continue
             md = (parser_dir / "pages" / f"page_{p:03d}.md").read_text(encoding="utf-8")
+            ext_figs, ext_tabs, has_vis = _extract_visual_elements(md)
             use_image = st["docling_chars"] < 40
             rec: dict[str, Any] = {
                 "page": p,
                 "source": "image" if use_image else "text",
                 "docling_chars": st["docling_chars"],
-                "tables": st["tables"],
-                "pictures": st["pictures"],
+                "tables_count": st["tables"],
+                "pictures_count": st["pictures"],
             }
             try:
                 if use_image:
@@ -279,16 +318,23 @@ def run_index(
                     ).output
                 else:
                     text_model.purpose = f"page_summary_p{p}"
-                    summary = summary_agent.run_sync(
-                        PAGE_SUMMARY_PROMPT.format(
-                            page=p, n_pages=n_pages, text=_truncate(md, 3000)
-                        )
-                    ).output
+                    prompt_text = PAGE_SUMMARY_PROMPT.format(
+                        page=p, n_pages=n_pages, text=_truncate(md, 3000)
+                    )
+                    if ext_figs or ext_tabs:
+                        prompt_text += f"\n\nDETECTED VISUAL ASSETS ON THIS PAGE:\nFigures: {ext_figs}\nTables: {ext_tabs}\nMake sure to retain these exact figure and table titles in your response fields."
+                    summary = summary_agent.run_sync(prompt_text).output
+
+                merged_figs = list(dict.fromkeys(getattr(summary, "figures", []) + ext_figs))
+                merged_tabs = list(dict.fromkeys(getattr(summary, "tables", []) + ext_tabs))
                 rec.update(
                     {
                         "title": summary.title.strip()[:120],
                         "summary": summary.summary.strip()[:600],
                         "keywords": [str(k) for k in summary.keywords][:10],
+                        "figures": merged_figs,
+                        "tables": merged_tabs,
+                        "has_visual_elements": getattr(summary, "has_visual_elements", False) or has_vis,
                         "error": None,
                     }
                 )
@@ -304,14 +350,17 @@ def run_index(
                         "title": first_line[:120],
                         "summary": "(summary agent failed; fallback to first line)",
                         "keywords": [],
+                        "figures": ext_figs,
+                        "tables": ext_tabs,
+                        "has_visual_elements": has_vis,
                         "error": str(exc),
                     }
                 )
-            log.info("page %3d [%s] title=%r", p, rec["source"], rec["title"])
+            log.info("page %3d [%s] title=%r figures=%r", p, rec["source"], rec["title"], rec.get("figures"))
             out.write(json.dumps(rec, ensure_ascii=False) + "\n")
             pages[str(p)] = rec
 
-    # ---- hierarchy (agent + output validator that forces a retry on an invalid tree)
+    # hierarchy (agent + output validator that forces a retry on an invalid tree)
     doc_title = pages["1"]["title"]
     page_lines = "\n".join(
         f"p{p}: {pages[str(p)]['title']} -- {pages[str(p)]['summary'][:160]}"

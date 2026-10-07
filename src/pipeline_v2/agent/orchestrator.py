@@ -95,7 +95,7 @@ FORCED_FINAL_INSTRUCTIONS = (
 )
 
 
-# ----------------------------------------------------------------------------- BM25
+#  BM25
 _tok = re.compile(r"[a-z0-9]+")
 
 
@@ -137,7 +137,7 @@ class BM25:
         return sorted(scores.items(), key=lambda x: -x[1])[:k]
 
 
-# ----------------------------------------------------------------------------- deps
+# deps
 @dataclass
 class NavDeps:
     """Everything the tools need; also collects the ledger, inspections and trace."""
@@ -222,7 +222,7 @@ def _page_ok(deps: NavDeps, page: int) -> int:
     return page
 
 
-# ----------------------------------------------------------------------------- agent
+# agent
 def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
     """Create the navigation agent with its tools and the final_answer output tool."""
     agent: Agent[NavDeps, FinalAnswer] = Agent(
@@ -288,8 +288,21 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
                         snippet = line.strip()[:200]
                         break
                 ps = deps.index["pages"][str(p)]
+                vis_tag = ""
+                figs = ps.get("figures") or []
+                tabs = ps.get("tables") or []
+                if figs or tabs or ps.get("has_visual_elements"):
+                    v_details = []
+                    if figs:
+                        v_details.append(f"Figures: {', '.join(figs)}")
+                    if tabs:
+                        v_details.append(f"Tables: {', '.join(tabs)}")
+                    if not v_details:
+                        v_details.append("Has Visuals")
+                    vis_tag = f" [{'; '.join(v_details)}]"
+
                 out.append(
-                    f"- page {p} (score {s:.1f}): {ps['title']} | "
+                    f"- page {p} (score {s:.1f}): {ps['title']}{vis_tag} | "
                     f"{snippet or ps['summary'][:160]}"
                 )
             result = "\n".join(out)
@@ -582,13 +595,17 @@ def run_orchestrator(
         p: (parser_dir / "pages" / f"page_{p:03d}.md").read_text(encoding="utf-8")
         for p in range(1, index["n_pages"] + 1)
     }
-    bm25 = BM25(
-        {
-            p: f"{index['pages'][str(p)]['title']} {index['pages'][str(p)]['summary']} "
-            f"{' '.join(index['pages'][str(p)].get('keywords', []))} {md}"
-            for p, md in pages_md.items()
-        }
-    )
+    bm25_docs = {}
+    for p, md in pages_md.items():
+        ps = index["pages"][str(p)]
+        figs = " ".join(ps.get("figures") or [])
+        tabs = " ".join(ps.get("tables") or [])
+        kw = " ".join(ps.get("keywords") or [])
+        # Weight page title, figures, and tables heavily so search queries hit exact figure numbers and visual topics
+        header_boost = f"{ps['title']} {figs} {tabs} " * 3
+        bm25_docs[p] = f"{header_boost} {ps['summary']} {kw} {md}"
+
+    bm25 = BM25(bm25_docs)
     outline_path = step_dir.parent / "02_index" / "outline.md"
     outline_md = (
         outline_path.read_text(encoding="utf-8") if outline_path.exists() else ""

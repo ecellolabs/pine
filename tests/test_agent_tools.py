@@ -17,7 +17,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from pipeline_v2.agent.common import AgentSettings, CostLedger
-from pipeline_v2.agent.index import _repair, _validate_tree, run_index
+from pipeline_v2.agent.index import _extract_visual_elements, _repair, _validate_tree, run_index
 from pipeline_v2.agent.orchestrator import BM25, TOOL_NAMES, run_orchestrator
 from pipeline_v2.agent.planner import run_planner
 from pipeline_v2.agent.verifier import decide, quote_in_text, run_verifier
@@ -74,6 +74,24 @@ def test_validate_tree_and_repair() -> None:
     assert repaired[0]["start_page"] == 1
 
 
+def test_extract_visual_elements() -> None:
+    sample_md = (
+        "## Section Title\n\n"
+        "Figure 1: Tree construction process in RAPTOR\n"
+        "<!-- image -->\n\n"
+        "Table 2: Ablation study results\n"
+        "| Model | ANLS | Score |\n"
+        "| --- | --- | --- |\n"
+        "| Ours | 0.95 | 1.00 |\n"
+    )
+    figs, tabs, has_vis = _extract_visual_elements(sample_md)
+    assert len(figs) == 1
+    assert "Figure 1: Tree construction process in RAPTOR" in figs[0]
+    assert len(tabs) >= 1
+    assert any("Table 2" in t or "Table columns" in t for t in tabs)
+    assert has_vis is True
+
+
 def test_decision_rule() -> None:
     assert decide("answered", "supported", True, True, 1, 2) == "ACCEPT"
     assert decide("answered", "supported", False, True, 1, 2) == "ACCEPT_WEAK_GROUNDING"
@@ -95,7 +113,7 @@ def test_settings_public_hides_key(tmp_path: Path) -> None:
     assert s.public()["agent_framework"] == "pydantic-ai"
 
 
-# --------------------------------------------------------------------------- fixtures
+# fixtures
 def _write_parsed_doc(run_dir: Path) -> tuple[Path, Path]:
     """A fake 2-page parsed document (01_parser) and index (02_index)."""
     parser_dir = run_dir / "01_parser"
@@ -448,7 +466,7 @@ def test_planner_and_index_with_stub_model(tmp_path: Path) -> None:
     assert ledger.calls == 5  # 2 page summaries + 2 hierarchy attempts + plan
 
 
-# --------------------------------------------------------------------------- visual samples
+#  visual samples
 def _fake_run(root: Path, run_id: str) -> None:
     d = root / run_id
     (d / "00_input").mkdir(parents=True)
