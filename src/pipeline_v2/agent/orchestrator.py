@@ -100,7 +100,13 @@ _tok = re.compile(r"[a-z0-9]+")
 
 
 def _tokens(s: str) -> list[str]:
-    return _tok.findall(s.lower())
+    toks = _tok.findall(s.lower())
+    matches = re.findall(r"\b(figure|fig|table)\s*(\d+)\b", s.lower())
+    for tag, num in matches:
+        toks.append(f"{tag}{num}")
+        toks.append(f"fig{num}")
+        toks.append(f"figure{num}")
+    return toks
 
 
 class BM25:
