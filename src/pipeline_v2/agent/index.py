@@ -20,51 +20,16 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-
-def _extract_visual_elements(md_text: str) -> tuple[list[str], list[str], bool]:
-    """Extract figure captions, table titles/headers, and check for visual elements in page markdown."""
-    figures: list[str] = []
-    tables: list[str] = []
-    for line in md_text.splitlines():
-        line_s = line.strip()
-        if not line_s:
-            continue
-        if re.search(r"\b(Figure|Fig)\.?\s*\d+[:\.]?", line_s, re.IGNORECASE):
-            figures.append(line_s[:150])
-        elif line_s.startswith("![") and "]" in line_s:
-            caption = line_s[2 : line_s.find("]")]
-            if caption and caption.lower() != "image":
-                figures.append(caption[:150])
-        elif re.search(r"\bTable\s+\d+[:\.]?", line_s, re.IGNORECASE):
-            tables.append(line_s[:150])
-        elif (
-            line_s.startswith("|")
-            and not line_s.startswith("|---")
-            and not line_s.startswith("| ---")
-        ):
-            cells = [c.strip() for c in line_s.split("|") if c.strip()]
-            if cells and not tables and len(cells) > 1:
-                tables.append(f"Table columns: {', '.join(cells[:5])}")
-
-    has_visuals = (
-        len(figures) > 0
-        or len(tables) > 0
-        or ("<!-- image -->" in md_text)
-        or ("![image" in md_text.lower())
-    )
-    return figures, tables, has_visuals
-
 
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 
+from pipeline_v2.agent.captions import extract_page_visuals, verify_hints, write_visuals
 from pipeline_v2.agent.common import (
     AgentSettings,
     CostLedger,
@@ -300,22 +265,32 @@ def run_index(
             r = json.loads(line)
             done[r["page"]] = r
     failures: list[dict[str, Any]] = []
+    pages_md = {
+        st["page"]: (parser_dir / "pages" / f"page_{st['page']:03d}.md").read_text(
+            encoding="utf-8"
+        )
+        for st in stats["page_stats"]
+    }
+    visuals = extract_page_visuals(
+        parser_dir, pages_md, {st["page"]: st["pictures"] for st in stats["page_stats"]}
+    )
+    write_visuals(step_dir, visuals)
+    log.info(
+        "captions: %d figure(s), %d table(s) from %s",
+        sum(len(v.figures) for v in visuals.values()),
+        sum(len(v.tables) for v in visuals.values()),
+        next(iter(visuals.values())).captions_source if visuals else "n/a",
+    )
     with summaries_path.open("a", encoding="utf-8") as out:
         for st in stats["page_stats"]:
             p = st["page"]
-            md = (parser_dir / "pages" / f"page_{p:03d}.md").read_text(encoding="utf-8")
-            ext_figs, ext_tabs, has_vis = _extract_visual_elements(md)
+            md = pages_md[p]
+            vis = visuals[p]
+            ext_figs, ext_tabs = vis.figures, vis.tables
             if p in done:
+                # captions are authoritative: overwrite whatever an older index stored
                 cached: dict[str, Any] = done[p]
-                cached["figures"] = list(
-                    dict.fromkeys(cached.get("figures", []) + ext_figs)
-                )
-                cached["tables"] = list(
-                    dict.fromkeys(cached.get("tables", []) + ext_tabs)
-                )
-                cached["has_visual_elements"] = (
-                    cached.get("has_visual_elements", False) or has_vis
-                )
+                cached.update(vis.to_dict())
                 pages[str(p)] = cached
                 continue
             use_image = st["docling_chars"] < 40
@@ -345,23 +320,19 @@ def run_index(
                         prompt_text += f"\n\nDETECTED VISUAL ASSETS ON THIS PAGE:\nFigures: {ext_figs}\nTables: {ext_tabs}\nMake sure to retain these exact figure and table titles in your response fields."
                     summary = summary_agent.run_sync(prompt_text).output
 
-                merged_figs = list(
-                    dict.fromkeys(getattr(summary, "figures", []) + ext_figs)
-                )
-                merged_tabs = list(
-                    dict.fromkeys(getattr(summary, "tables", []) + ext_tabs)
-                )
+                # model-proposed captions are hints: keep only those verbatim on the page
+                hint_figs = verify_hints(list(getattr(summary, "figures", [])), md)
+                hint_tabs = verify_hints(list(getattr(summary, "tables", [])), md)
                 rec.update(
                     {
                         "title": summary.title.strip()[:120],
                         "summary": summary.summary.strip()[:600],
                         "keywords": [str(k) for k in summary.keywords][:10],
-                        "figures": merged_figs,
-                        "tables": merged_tabs,
-                        "has_visual_elements": getattr(
-                            summary, "has_visual_elements", False
-                        )
-                        or has_vis,
+                        **vis.to_dict(),
+                        "figures": list(dict.fromkeys(ext_figs + hint_figs)),
+                        "tables": list(dict.fromkeys(ext_tabs + hint_tabs)),
+                        "has_visual_elements": vis.has_visual_elements
+                        or bool(getattr(summary, "has_visual_elements", False)),
                         "error": None,
                     }
                 )
@@ -377,9 +348,7 @@ def run_index(
                         "title": first_line[:120],
                         "summary": "(summary agent failed; fallback to first line)",
                         "keywords": [],
-                        "figures": ext_figs,
-                        "tables": ext_tabs,
-                        "has_visual_elements": has_vis,
+                        **vis.to_dict(),
                         "error": str(exc),
                     }
                 )

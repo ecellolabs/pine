@@ -42,6 +42,12 @@ and `agent_runs/visual_samples.html` (self-contained, first 20 runs). The three
 `s0` samples cost about $0.01 in total on OpenRouter; responses are cached under
 `agent_runs/.cache/llm` so re-runs are free.
 
+**Rule: always reset the cache before re-running samples** (`rm -rf agent_runs/.cache/llm`, or a
+fresh `--cache-dir`). A warm cache replays earlier replies to identical requests, so the run shows
+the cached behaviour, not the model's. Keep the cache only for pure rebuilds (HTML, parser-only
+changes) where no model behaviour is being evaluated. Quote the expected cost to the user before
+any run that misses the cache.
+
 `--max-samples` decides the scope: omitted = the **full** dataset; integer `N` =
 the first N documents (add `--questions-per-doc K` to limit questions per
 document); a name such as `s0` = exactly the samples in `sample_sets/s0.json`.
@@ -71,8 +77,12 @@ Slash commands in `.claude/commands/`: `/run-agent`, `/visual-samples`, `/analyz
 
 Every model interaction goes through `pydantic_ai.Agent`; keep it that way when extending:
 
-- Outputs are typed (`agent/schemas.py`): `PromptedOutput(Model)` for the planner, verifier,
-  page summaries and hierarchy; `ToolOutput(FinalAnswer, name="final_answer")` for the navigator.
+- Outputs are typed (`agent/schemas.py`) and delivered as tool calls (`ToolOutput`): the 7B
+  models echo JSON schemas when asked for prompted JSON, so `PromptedOutput` is avoided.
+  The navigator's output tool is `final_answer`; an `@agent.output_validator` bounces an
+  abstention until at least `MIN_PAGES_BEFORE_ABSTAIN` pages were read/inspected and an
+  *answered* final until a ledger entry exists (this gate is what makes the 7B model search
+  before giving up; prompt-only instructions were tried and ignored).
   Validation failures are retried by Pydantic AI (`retries=`); structural checks live in
   `@agent.output_validator` functions that raise `ModelRetry` (see the hierarchy validator).
 - Tools are `@agent.tool` functions taking `RunContext[NavDeps]`; the docstring is the tool

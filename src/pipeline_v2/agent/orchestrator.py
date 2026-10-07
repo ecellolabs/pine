@@ -528,10 +528,13 @@ async def _navigate(
     return final, failure
 
 
-def _forced_final(
+async def _forced_final(
     text_model: TracedModel, deps: NavDeps, question: str, reason: str
 ) -> FinalAnswer:
-    """Budget exhausted / retries exhausted: ask once for a grounded final answer."""
+    """Budget exhausted / retries exhausted: ask once for a grounded final answer.
+
+    Must run inside the same event loop as the navigation (the provider's async
+    HTTP client is bound to it), hence async."""
     notes = (
         "\n".join(
             f"- page {e['page']}: answer={e['candidate_answer']!r} quote={e['quote']!r}"
@@ -555,10 +558,11 @@ def _forced_final(
     )
     text_model.purpose = "forced_final_answer"
     try:
-        return agent.run_sync(
+        result = await agent.run(
             f"Question: {question}\nReason: {reason}\nPages read: {pages}\n"
             f"Evidence ledger:\n{notes}\nImage inspections:\n{inspections}"
-        ).output
+        )
+        return result.output
     except Exception as exc:  # noqa: BLE001
         deps.log.error("forced final answer failed: %s", exc)
         return FinalAnswer(
@@ -611,11 +615,13 @@ def run_orchestrator(
     bm25_docs = {}
     for p, md in pages_md.items():
         ps = index["pages"][str(p)]
-        figs = " ".join(ps.get("figures") or [])
+        figs = " ".join(ps.get("figures") or [])  # true captions only
         tabs = " ".join(ps.get("tables") or [])
         kw = " ".join(ps.get("keywords") or [])
-        # Weight page title, figures, and tables heavily so search queries hit exact figure numbers and visual topics
-        header_boost = f"{ps['title']} {figs} {tabs} " * 3
+        # Captions (and the title) are repeated so that 'Figure N' queries rank the page
+        # that carries the caption first; in-text mentions are left in the body text
+        # at natural weight (ps['mentions_figures'] is deliberately not boosted).
+        header_boost = f"{ps['title']} " * 3 + f"{figs} {tabs} " * 5
         bm25_docs[p] = f"{header_boost} {ps['summary']} {kw} {md}"
 
     bm25 = BM25(bm25_docs)
@@ -674,10 +680,12 @@ def run_orchestrator(
 
     agent = build_navigator(text_model)
     text_model.purpose = f"orchestrator_round{round_no}"
-    final_obj, failure = asyncio.run(
-        _navigate(agent, deps, system, user, max_tool_calls)
-    )
-    if failure:
+
+    async def _round() -> tuple[FinalAnswer | None, bool]:
+        """Navigation and, if needed, the forced final answer on ONE event loop."""
+        final_obj, failure = await _navigate(agent, deps, system, user, max_tool_calls)
+        if not failure:
+            return final_obj, False
         kind = failure.split(":", 1)[0]
         deps.anomalies.append(
             {"type": kind, "detail": failure[:400], "calls": deps.calls}
@@ -685,10 +693,9 @@ def run_orchestrator(
         log.warning(
             "%s -> forcing a final answer from the evidence so far", failure[:200]
         )
-        final_obj = _forced_final(text_model, deps, question, failure)
-        salvaged = True
-    else:
-        salvaged = False
+        return await _forced_final(text_model, deps, question, failure), True
+
+    final_obj, salvaged = asyncio.run(_round())
     assert final_obj is not None
     final: dict[str, Any] = {
         "status": final_obj.status,

@@ -192,6 +192,10 @@ uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://se
   (Qwen2.5-VL-7B-Instruct is not served on OpenRouter).
 - `--docling-url` — use the cluster's Docling API instead of the in-process library (RapidOCR).
 - `--cache-dir` — LLM response cache (default `<output-dir>/.cache/llm`); identical requests are free.
+- **Rule: reset the cache before re-running samples you want to re-evaluate.** The cache replays
+  the model's earlier reply to any identical request, so a re-run with a warm cache measures the
+  cache, not the model: `rm -rf agent_runs/.cache/llm` (or pass a fresh `--cache-dir`) first.
+  Keep the cache only when nothing about the agent changed and you just want the folders rebuilt.
 - `--max-rounds`, `--max-tool-calls` — agent budgets (default 2 rounds × 12 tool calls).
 
 ### Step 5 — `usage/05_visual_samples.py`

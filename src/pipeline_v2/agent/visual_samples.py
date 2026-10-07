@@ -234,7 +234,6 @@ const DATA = JSON.parse(document.getElementById('data').textContent);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pj = o => esc(JSON.stringify(o, null, 2));
 const fmt$ = v => '$' + Number(v || 0).toFixed(4);
-const range = (a, b) => Array.from({length: Math.max(0, b - a + 1)}, (_, k) => a + k);
 function badge(txt, cls){return `<span class="badge ${cls}">${esc(txt)}</span>`}
 function inner(title, html, open=false){return `<details class="inner"${open?' open':''}><summary>${title}</summary><div class="in">${html}</div></details>`}
 
