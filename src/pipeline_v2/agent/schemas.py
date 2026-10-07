@@ -53,10 +53,7 @@ class Plan(BaseModel):
     """Planner output: how to attack the question."""
 
     question_type: str = Field(
-        description=(
-            "factoid | lookup | counting | comparison | list | reasoning | "
-            "possibly_unanswerable"
-        )
+        description="factoid | lookup | counting | comparison | list | reasoning"
     )
     expected_answer_format: str = Field(description="Int | Float | Str | List | None")
     needs_visual_inspection: bool = Field(
@@ -72,9 +69,6 @@ class Plan(BaseModel):
     candidate_sections: list[str] = Field(
         default_factory=list,
         description="Section ids from the outline most likely to contain the evidence",
-    )
-    abstain_condition: str = Field(
-        description="When the agent should answer 'Not answerable'"
     )
 
 

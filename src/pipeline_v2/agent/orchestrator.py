@@ -56,7 +56,6 @@ from pipeline_v2.agent.schemas import FinalAnswer
 from pipeline_v2.agent.verifier import quote_in_text
 
 DEFAULT_MAX_TOOL_CALLS = 12
-MIN_PAGES_BEFORE_ABSTAIN = 2
 READ_PAGE_MAX_CHARS = 5000
 TOOL_NAMES = [
     "get_outline",
@@ -256,16 +255,9 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
 
     @agent.output_validator
     def effort_gate(ctx: RunContext[NavDeps], out: FinalAnswer) -> FinalAnswer:
-        """Minimum-effort gates enforced in code, not left to the prompt."""
+        """An *answered* final needs recorded evidence. Abstentions are never
+        bounced: there is deliberately no minimum-page rule."""
         deps = ctx.deps
-        looked_at = len(set(deps.pages_read)) + len(deps.image_inspections)
-        if out.status == "not_answerable" and looked_at < MIN_PAGES_BEFORE_ABSTAIN:
-            raise ModelRetry(
-                f"You have only looked at {looked_at} page(s). Before concluding "
-                "not_answerable, search for the key terms and read or inspect at least "
-                f"{MIN_PAGES_BEFORE_ABSTAIN} candidate pages (start with the planner's "
-                "candidate sections)."
-            )
         if out.status == "answered" and not deps.ledger:
             raise ModelRetry(
                 "Call record_evidence with the page and an exact quotation that "
@@ -462,7 +454,7 @@ def _request_anomalies(deps: NavDeps, parts: list[Any]) -> None:
             if part.tool_name == "record_evidence" and "not found verbatim" in content:
                 continue  # already recorded as QUOTE_REJECTED by the tool
             if part.tool_name == "final_answer":
-                kind = "PREMATURE_FINAL"
+                kind = "FINAL_WITHOUT_EVIDENCE"
             elif part.tool_name:
                 kind = "BAD_TOOL_ARGS"
             else:

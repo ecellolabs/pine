@@ -16,8 +16,8 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from pipeline_v2.agent.common import AgentSettings, CostLedger
 from pipeline_v2.agent.captions import captions_from_markdown
+from pipeline_v2.agent.common import AgentSettings, CostLedger
 from pipeline_v2.agent.index import _repair, _validate_tree, run_index
 from pipeline_v2.agent.orchestrator import BM25, TOOL_NAMES, run_orchestrator
 from pipeline_v2.agent.planner import run_planner
@@ -255,7 +255,6 @@ def _prompted_stub(messages: list[ModelMessage], info: AgentInfo) -> ModelRespon
             "sub_goals": ["find NARL"],
             "search_queries": ["NARL"],
             "candidate_sections": ["S1"],
-            "abstain_condition": "never",
         }
     elif name == "Verdict":
         payload = {
@@ -393,29 +392,28 @@ def test_budget_exhaustion_forces_final(tmp_path: Path) -> None:
     assert final["tool_calls_used"] <= 3
 
 
-def test_premature_abstention_is_gated(tmp_path: Path) -> None:
+def test_abstention_is_not_gated_but_answers_need_evidence(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     parser_dir, _ = _write_parsed_doc(run_dir)
     index = json.loads((run_dir / "02_index" / "index.json").read_text())
+    abstain = {
+        "status": "not_answerable",
+        "answer": "Not answerable",
+        "evidence_pages": [2],
+        "reasoning": "figure has no colours",
+    }
 
-    def lazy(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        """Abstains immediately; after the gate's retry it reads pages, then abstains."""
+    def abstain_after_one_look(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> ModelResponse:
         n = sum(isinstance(m, ModelResponse) for m in messages)
-        abstain = {
-            "status": "not_answerable",
-            "answer": "Not answerable",
-            "evidence_pages": [],
-            "reasoning": "nothing",
-        }
         if n == 0:
-            return ModelResponse(parts=[ToolCallPart("final_answer", abstain)])
-        if n == 1:
-            return ModelResponse(parts=[ToolCallPart("read_page", {"page": 1})])
-        if n == 2:
             return ModelResponse(parts=[ToolCallPart("read_page", {"page": 2})])
         return ModelResponse(parts=[ToolCallPart("final_answer", abstain)])
 
-    settings = _settings(tmp_path, lambda name: FunctionModel(lazy, model_name=name))
+    settings = _settings(
+        tmp_path, lambda name: FunctionModel(abstain_after_one_look, model_name=name)
+    )
     final = run_orchestrator(
         settings,
         "Q?",
@@ -428,8 +426,32 @@ def test_premature_abstention_is_gated(tmp_path: Path) -> None:
         CostLedger(run_dir),
     )
     assert final["status"] == "not_answerable" and final["salvaged"] is False
-    assert final["pages_read"] == [1, 2]
-    assert [a["type"] for a in final["anomalies"]] == ["PREMATURE_FINAL"]
+    assert final["pages_read"] == [2] and final["evidence_pages"] == [2]
+    assert final["anomalies"] == []
+
+    def answer_without_evidence(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> ModelResponse:
+        answered = {"status": "answered", "answer": "red", "evidence_pages": [2]}
+        return ModelResponse(parts=[ToolCallPart("final_answer", answered)])
+
+    settings = _settings(
+        tmp_path, lambda name: FunctionModel(answer_without_evidence, model_name=name)
+    )
+    final = run_orchestrator(
+        settings,
+        "Q2 (distinct prompt so the response cache cannot replay run 1)?",
+        run_dir / "doc.pdf",
+        index,
+        {},
+        parser_dir,
+        run_dir / "04_orchestrator_b",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+    )
+    kinds = [a["type"] for a in final["anomalies"]]
+    assert kinds.count("FINAL_WITHOUT_EVIDENCE") >= 1 and "MODEL_BEHAVIOR" in kinds
+    assert final["salvaged"] is True
 
 
 def test_planner_and_index_with_stub_model(tmp_path: Path) -> None:

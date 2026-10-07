@@ -79,10 +79,10 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
 
 - Outputs are typed (`agent/schemas.py`) and delivered as tool calls (`ToolOutput`): the 7B
   models echo JSON schemas when asked for prompted JSON, so `PromptedOutput` is avoided.
-  The navigator's output tool is `final_answer`; an `@agent.output_validator` bounces an
-  abstention until at least `MIN_PAGES_BEFORE_ABSTAIN` pages were read/inspected and an
-  *answered* final until a ledger entry exists (this gate is what makes the 7B model search
-  before giving up; prompt-only instructions were tried and ignored).
+  The navigator's output tool is `final_answer`; its only gate (an `@agent.output_validator`)
+  is that an *answered* final needs a ledger entry. Abstentions are never bounced: there is no
+  minimum-page rule. The planner is a search strategy (queries, sections, visual or not); it has
+  no abstain field.
   Validation failures are retried by Pydantic AI (`retries=`); structural checks live in
   `@agent.output_validator` functions that raise `ModelRetry` (see the hierarchy validator).
 - Tools are `@agent.tool` functions taking `RunContext[NavDeps]`; the docstring is the tool

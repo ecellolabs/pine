@@ -23,10 +23,9 @@ titled "{doc_title}" using a table of contents, keyword search over page text, r
 Document outline (section titles with page ranges):
 {outline}
 
-Produce a plan: the question type, the expected answer format (Int | Float | Str | List | None),
+Produce a search strategy: the question type, the expected answer format (Int | Float | Str | List | None),
 whether visual inspection of charts/figures/images is needed, ordered concrete sub-goals,
-3-6 short keyword search queries, the outline section ids most likely to hold the evidence,
-and the condition under which the agent should answer 'Not answerable'."""
+3-6 short keyword search queries, and the outline section ids most likely to hold the evidence."""
 
 
 def outline_lines(index: dict[str, Any]) -> str:
@@ -96,7 +95,6 @@ def run_planner(
             "sub_goals": [question],
             "search_queries": [question],
             "candidate_sections": [],
-            "abstain_condition": "no evidence found",
             "_error": str(exc),
         }
     plan["round"] = round_no

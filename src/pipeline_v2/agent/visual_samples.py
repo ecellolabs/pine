@@ -293,7 +293,7 @@ function renderRun(r, i){
 
   // ---- 3 planner
   h += step(i,3,'Planner', `${r.plans.length} round(s)`, r.plans.map(p=>`<div class="sum"><div><b>Round</b><span>${p.round}</span></div><div><b>Question type</b><span>${esc(p.question_type)}</span></div><div><b>Expected format</b><span>${esc(p.expected_answer_format)}</span></div><div><b>Needs visual</b><span>${esc(p.needs_visual_inspection)}</span></div><div><b>Candidate sections</b><span>${esc((p.candidate_sections||[]).join(', '))}</span></div></div>
-    <b>Sub-goals</b><ol>${(p.sub_goals||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol><b>Search queries</b> <span>${(p.search_queries||[]).map(s=>`<code>${esc(s)}</code>`).join(' ')}</span><div><b>Abstain condition:</b> ${esc(p.abstain_condition)}</div>${p.gaps_in&&p.gaps_in.length?`<div><b>Gaps from verifier:</b> ${esc(p.gaps_in.join('; '))}</div>`:''}${p._error?badge('PLANNER ERROR: '+p._error,'bad'):''}
+    <b>Sub-goals</b><ol>${(p.sub_goals||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol><b>Search queries</b> <span>${(p.search_queries||[]).map(s=>`<code>${esc(s)}</code>`).join(' ')}</span>${p.gaps_in&&p.gaps_in.length?`<div><b>Gaps from verifier:</b> ${esc(p.gaps_in.join('; '))}</div>`:''}${p._error?badge('PLANNER ERROR: '+p._error,'bad'):''}
     ${inner('plan JSON',`<pre>${pj(p)}</pre>`)}`).join('<hr>'));
 
   // ---- 4 orchestrator

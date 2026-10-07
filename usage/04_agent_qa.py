@@ -42,7 +42,7 @@ from pipeline_v2.agent.common import (
 )
 from pipeline_v2.agent.runner import RunSpec, run_sample
 from pipeline_v2.agent.visual_samples import build_visual_samples
-from pipeline_v2.datasets import *  # noqa: F403  (registers the datasets)
+from pipeline_v2.datasets import *
 from pipeline_v2.sampling import (
     SampleSet,
     dataset_load_kwargs,
@@ -296,7 +296,7 @@ def main() -> None:
                 }
             )
             results.append(result)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception(f"run {spec.run_id} failed")
             manifest["runs"].append(
                 {
