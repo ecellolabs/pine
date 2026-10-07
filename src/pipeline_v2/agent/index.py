@@ -59,6 +59,7 @@ def _extract_visual_elements(md_text: str) -> tuple[list[str], list[str], bool]:
     )
     return figures, tables, has_visuals
 
+
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.output import ToolOutput
