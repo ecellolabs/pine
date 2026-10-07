@@ -1,0 +1,15 @@
+{
+  "name": "s1",
+  "dataset": "mmlongbench_doc",
+  "description": "Single-sample set: the second s0 example only (RAPTOR paper, Figure 1 question whose gold answer is 'Not answerable'). Exercises the image tool, caption search and the verifier's abstention rule.",
+  "created": "2026-10-07",
+  "author": "Muhammad Talal Majeed",
+  "samples": [
+    {
+      "run_id": "run2_raptor_figure_unanswerable",
+      "doc_id": "2401.18059v1.pdf",
+      "question": "In Figure 1's demonstration, what are the color of the nodes that appear in all three clusters?",
+      "why_chosen": "Academic paper (23 pages). Requires inspecting Figure 1 as an image; the correct output is abstention (Not answerable). Tests the image tool and the verifier's abstention."
+    }
+  ]
+}
