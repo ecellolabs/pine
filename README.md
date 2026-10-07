@@ -1,13 +1,25 @@
-# pipeline-v2
+# PINE — Page-Index Navigation with Evidence-grounding
 
-A multi-page multimodal document dataset preparation and preprocessing pipeline for Document Visual Question Answering (DocVQA) and Document Analysis.
+**Beyond Flat Retrieval: Hierarchical Index Navigation for Grounded Multi-Page Document Question Answering**
+
+PINE answers questions over long, visually rich documents (reports, papers, slide decks) with
+open 7B–8B Qwen models and returns answers that cite their pages and quotations, or abstains.
+Instead of flat chunk retrieval, each document is parsed once (Docling layout-aware OCR), indexed
+into a page-level hierarchy with its figure and table captions, and navigated by a Pydantic AI
+agent: a planner proposes a search strategy, an orchestrator moves through the index with tools
+(outline, BM25 page search, page text, page-image inspection, evidence ledger), and a verifier
+checks that the cited page supports the answer before accepting it. The official MMLongBench-Doc
+scorer, MP-DocVQA and SlideVQA loaders, and a self-contained visual trace of every run are included.
+
+Final Year Project, NUST SEECS — Muhammad Talal Majeed and Momena Akhtar; advisor Dr. Junaid Younus,
+co-advisor Dr. Muhammad Imran Malik.
 
 ---
 
 ## Repository Structure
 
 ```text
-pipeline-v2/
+PINE/
 ├── pyproject.toml              # Project metadata, dependencies, and build config
 ├── uv.lock                     # Deterministic dependency lockfile
 ├── README.md                   # Pipeline documentation & architecture guidelines
@@ -18,7 +30,7 @@ pipeline-v2/
 │   ├── test.sh                 # Unit tests & coverage runner (pytest)
 │   └── bump.sh                 # Version bumping script
 ├── src/
-│   └── pipeline_v2/            # Core package: reusable loaders, parsers, and transforms
+│   └── pipeline_v2/            # Core package (import name kept as `pipeline_v2`): loaders, parsers, agent
 │       ├── __init__.py
 │       ├── datasets/           # Dataset loaders and adapters (registered with atria_core)
 │       │   ├── __init__.py     # Re-exports MMLongBenchDoc, MPDocVQA, SlideVQA
@@ -227,7 +239,7 @@ load -> MultiPageDocumentInstance -> preprocess transform -> ParsedInstance
 
 ## Architectural & Structural Guidelines
 
-When extending or adding stages to `pipeline-v2`, adhere to the following design principles:
+When extending or adding stages to PINE, adhere to the following design principles:
 
 ### 1. Stateless Pipeline Stages
 - Each stage in the pipeline corresponds to an arrow in the flow above.

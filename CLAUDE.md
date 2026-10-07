@@ -1,7 +1,8 @@
-# pipeline-v2 — working notes for Claude Code
+# PINE (Page-Index Navigation with Evidence-grounding) — working notes for Claude Code
 
-Multi-page DocVQA dataset pipeline (atria-core based) plus the **grounded agentic
-DocQA pipeline** from the FYP proposal "Grounded Multi-Page Document QA with
+Beyond Flat Retrieval: Hierarchical Index Navigation for Grounded Multi-Page Document
+Question Answering. Multi-page DocVQA dataset pipeline (atria-core based) plus the
+**grounded agentic DocQA pipeline** from the FYP proposal "Grounded Multi-Page Document QA with
 Indexed Agentic Orchestration" (NUST SEECS, Talal Majeed & Momena Akhtar).
 
 ## Setup
