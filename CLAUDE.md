@@ -103,4 +103,6 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
 - Keep prompts and schemas in `agent/*.py` stable: the LLM cache is keyed on the exact
   request (messages + tool schemas + settings), so changing one invalidates cached (free) replays.
 - Run `./ci/run_checks.sh` before committing; `ruff format src` fixes formatting.
+- Commits and pull requests carry no AI attribution: no `Co-Authored-By` trailer, no
+  "Generated with" footer. Author is the person running the session.
 - Do not commit `agent_runs/` (PDF copies, CC BY-NC benchmark text) or any key.
