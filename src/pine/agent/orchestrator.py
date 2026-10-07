@@ -43,7 +43,7 @@ from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from pipeline_v2.agent.common import (
+from pine.agent.common import (
     AgentSettings,
     CostLedger,
     append_jsonl,
@@ -51,9 +51,9 @@ from pipeline_v2.agent.common import (
     setup_logger,
     write_json,
 )
-from pipeline_v2.agent.llm import TracedModel, response_to_chat, traced_model
-from pipeline_v2.agent.schemas import FinalAnswer
-from pipeline_v2.agent.verifier import quote_in_text
+from pine.agent.llm import TracedModel, response_to_chat, traced_model
+from pine.agent.schemas import FinalAnswer
+from pine.agent.verifier import quote_in_text
 
 DEFAULT_MAX_TOOL_CALLS = 12
 READ_PAGE_MAX_CHARS = 5000

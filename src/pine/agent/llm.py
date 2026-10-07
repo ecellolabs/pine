@@ -33,7 +33,7 @@ from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
-from pipeline_v2.agent.common import AgentSettings, CostLedger, append_jsonl
+from pine.agent.common import AgentSettings, CostLedger, append_jsonl
 
 _RESPONSE_ADAPTER: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 _PARAMS_ADAPTER: TypeAdapter[ModelRequestParameters] = TypeAdapter(

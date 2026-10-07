@@ -25,9 +25,9 @@ from pydantic_ai import Agent
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 
-from pipeline_v2.agent.common import AgentSettings, CostLedger, setup_logger, write_json
-from pipeline_v2.agent.llm import traced_model
-from pipeline_v2.agent.schemas import Verdict
+from pine.agent.common import AgentSettings, CostLedger, setup_logger, write_json
+from pine.agent.llm import traced_model
+from pine.agent.schemas import Verdict
 
 VERIFY_INSTRUCTIONS = """You are the VERIFIER of a grounded document question-answering system. Decide whether the cited evidence from the document supports the proposed answer. Be strict: the answer must be directly supported by the evidence text, not by general knowledge.
 Report whether the quoted evidence is actually present in the cited page content, a 1-2 sentence explanation, and concrete gaps (what is still missing or should be checked: sections, pages, figures).

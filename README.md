@@ -14,6 +14,9 @@ scorer, MP-DocVQA and SlideVQA loaders, and a self-contained visual trace of eve
 Final Year Project, NUST SEECS — Muhammad Talal Majeed and Momena Akhtar; advisor Dr. Junaid Younus,
 co-advisor Dr. Muhammad Imran Malik.
 
+> **Renamed (7 Oct 2026):** the project and its Python package were `pipeline-v2` / `pipeline_v2`;
+> they are now `pine`. Update imports (`from pine...`) and re-run `uv sync` after pulling.
+
 ---
 
 ## Repository Structure
@@ -30,7 +33,7 @@ PINE/
 │   ├── test.sh                 # Unit tests & coverage runner (pytest)
 │   └── bump.sh                 # Version bumping script
 ├── src/
-│   └── pipeline_v2/            # Core package (import name kept as `pipeline_v2`): loaders, parsers, agent
+│   └── pine/                   # Core package `pine` (renamed from `pipeline_v2`): loaders, parsers, agent
 │       ├── __init__.py
 │       ├── datasets/           # Dataset loaders and adapters (registered with atria_core)
 │       │   ├── __init__.py     # Re-exports MMLongBenchDoc, MPDocVQA, SlideVQA
@@ -87,7 +90,7 @@ PINE/
 
 ## Usage scripts
 
-`pipeline_v2.datasets` registers three custom datasets: `mmlongbench_doc`, `mpdocvqa`, and `slidevqa`. Both usage scripts work with any of the three — just swap the dataset name.
+`pine.datasets` registers three custom datasets: `mmlongbench_doc`, `mpdocvqa`, and `slidevqa`. Both usage scripts work with any of the three — just swap the dataset name.
 
 ### Step 1 — `usage/00_prepare_dataset.py`
 
@@ -173,7 +176,7 @@ hierarchical index → planner → tool-calling orchestrator (outline / BM25 sea
 inspect page image / evidence ledger) → verifier (quote-in-page check + grounding verdict +
 abstention) → official MMLongBench-Doc scorer. Every question gets a fully traced folder.
 All agents are [Pydantic AI](https://ai.pydantic.dev) `Agent`s with typed outputs and `@agent.tool`
-tools (`src/pipeline_v2/agent/`); model calls go through a caching, cost-logging `WrapperModel`.
+tools (`src/pine/agent/`); model calls go through a caching, cost-logging `WrapperModel`.
 
 ```bash
 # the reference experiment: 3 fixed samples defined in sample_sets/s0.json (~$0.01 on OpenRouter)
@@ -262,12 +265,12 @@ When extending or adding stages to PINE, adhere to the following design principl
   - **Stage 2+ (Downstream Processing)**: `<data_dir>/<stage_name>/<split>/<sample.key>.json`
 
 ### 4. Separation of Concerns
-- **`src/pipeline_v2/`**: Reusable modules, data models, parsing transforms, and API clients (e.g., `src/pipeline_v2/processors/gpt.py`). Code here should be importable as a clean library and never parse CLI arguments directly.
+- **`src/pine/`**: Reusable modules, data models, parsing transforms, and API clients (e.g., `src/pine/processors/gpt.py`). Code here should be importable as a clean library and never parse CLI arguments directly.
 - **`usage/`**: Numbered CLI driver scripts (`00_prepare_dataset.py`, `01_preprocess.py`, `02_gpt_process.py`, etc.) that parse CLI flags via `argparse`, orchestrate multiprocessing/batching, and invoke transforms.
 
 ### 5. Adding New Components (Example: LLM / GPT API Processing)
 To add a downstream component:
-1. Create a processor class under `src/pipeline_v2/processors/<name>.py` that handles the transform/inference logic.
+1. Create a processor class under `src/pine/processors/<name>.py` that handles the transform/inference logic.
 2. Create a driver script under `usage/02_<name>.py` that loads upstream artifacts from disk, calls the processor, and writes stage results back to `<data_dir>/<name>/<split>/`.
 
 ### 6. Downstream Agentic Pipeline Handoff

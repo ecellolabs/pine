@@ -1,8 +1,8 @@
 from atria_core.datasets import datasets
 
-from pipeline_v2.datasets.mmlongbench_doc import MMLongBenchDocConfig
-from pipeline_v2.datasets.mpdocvqa import MPDocVQAConfig
-from pipeline_v2.datasets.slidevqa import SlideVQAConfig
+from pine.datasets.mmlongbench_doc import MMLongBenchDocConfig
+from pine.datasets.mpdocvqa import MPDocVQAConfig
+from pine.datasets.slidevqa import SlideVQAConfig
 
 
 def test_registered_datasets() -> None:

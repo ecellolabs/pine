@@ -16,13 +16,13 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from pipeline_v2.agent.captions import captions_from_markdown
-from pipeline_v2.agent.common import AgentSettings, CostLedger
-from pipeline_v2.agent.index import _repair, _validate_tree, run_index
-from pipeline_v2.agent.orchestrator import BM25, TOOL_NAMES, run_orchestrator
-from pipeline_v2.agent.planner import run_planner
-from pipeline_v2.agent.verifier import decide, quote_in_text, run_verifier
-from pipeline_v2.agent.visual_samples import build_visual_samples, discover_runs
+from pine.agent.captions import captions_from_markdown
+from pine.agent.common import AgentSettings, CostLedger
+from pine.agent.index import _repair, _validate_tree, run_index
+from pine.agent.orchestrator import BM25, TOOL_NAMES, run_orchestrator
+from pine.agent.planner import run_planner
+from pine.agent.verifier import decide, quote_in_text, run_verifier
+from pine.agent.visual_samples import build_visual_samples, discover_runs
 
 PAGE2 = (
     "## National Atmospheric Research Laboratory (NARL)\n"

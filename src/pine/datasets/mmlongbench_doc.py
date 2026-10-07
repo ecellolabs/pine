@@ -191,7 +191,7 @@ class InputTransform:
 class MMLongBenchDocConfig(DatasetConfig):
     max_samples: int | None = None
     # Explicit list of PDF file names (doc_id) to load, in order. Used by sample
-    # sets (`--max-samples s0`); see `pipeline_v2.sampling`.
+    # sets (`--max-samples s0`); see `pine.sampling`.
     doc_ids: list[str] | None = None
 
 

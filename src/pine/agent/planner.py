@@ -13,9 +13,9 @@ from pydantic_ai import Agent
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 
-from pipeline_v2.agent.common import AgentSettings, CostLedger, setup_logger, write_json
-from pipeline_v2.agent.llm import traced_model
-from pipeline_v2.agent.schemas import Plan
+from pine.agent.common import AgentSettings, CostLedger, setup_logger, write_json
+from pine.agent.llm import traced_model
+from pine.agent.schemas import Plan
 
 PLAN_INSTRUCTIONS = """You are the PLANNER of a document question-answering agent. The agent can navigate a {n_pages}-page document
 titled "{doc_title}" using a table of contents, keyword search over page text, reading page text, and inspecting page images.

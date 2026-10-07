@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import httpx
 from PIL import Image
 
-from pipeline_v2.evaluation import evaluate_dataset
-from pipeline_v2.models.qwen import (
+from pine.evaluation import evaluate_dataset
+from pine.models.qwen import (
     QwenVLConfig,
     QwenVLModel,
     extract_answer_content,

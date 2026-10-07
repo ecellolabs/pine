@@ -5,6 +5,9 @@ Question Answering. Multi-page DocVQA dataset pipeline (atria-core based) plus t
 **grounded agentic DocQA pipeline** from the FYP proposal "Grounded Multi-Page Document QA with
 Indexed Agentic Orchestration" (NUST SEECS, Talal Majeed & Momena Akhtar).
 
+Renamed on 7 Oct 2026 from `pipeline-v2` (package `pipeline_v2`) to `pine`; imports are
+`from pine...` and the distribution name in `pyproject.toml` is `pine`.
+
 ## Setup
 
 ```bash
@@ -21,11 +24,11 @@ ever contains the key.
 
 | Path | Purpose |
 |---|---|
-| `src/pipeline_v2/datasets/` | atria-core dataset loaders (`mmlongbench_doc`, `mpdocvqa`, `slidevqa`) |
-| `src/pipeline_v2/parsers/docling.py` | remote Docling API transform (cluster) |
-| `src/pipeline_v2/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
-| `src/pipeline_v2/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
-| `src/pipeline_v2/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `planner`, `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `runner`, `visual_samples` (HTML page) |
+| `src/pine/datasets/` | atria-core dataset loaders (`mmlongbench_doc`, `mpdocvqa`, `slidevqa`) |
+| `src/pine/parsers/docling.py` | remote Docling API transform (cluster) |
+| `src/pine/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
+| `src/pine/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
+| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `planner`, `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `runner`, `visual_samples` (HTML page) |
 | `usage/0N_*.py` | stateless CLI stages; `04_agent_qa.py` runs the agent (full dataset or a selection), `05_visual_samples.py` builds the visual-samples page |
 | `sample_sets/*.json` | named, exact lists of (doc_id, question) so an experiment is replicable |
 | `tests/` | pytest; `ci/` the check scripts |
@@ -100,7 +103,7 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
 ## Conventions
 
 - Stages are stateless: read from disk, write to disk, idempotent (skip existing outputs).
-- Library code in `src/pipeline_v2/` never parses CLI args; drivers live in `usage/`.
+- Library code in `src/pine/` never parses CLI args; drivers live in `usage/`.
 - Keep prompts and schemas in `agent/*.py` stable: the LLM cache is keyed on the exact
   request (messages + tool schemas + settings), so changing one invalidates cached (free) replays.
 - Run `./ci/run_checks.sh` before committing; `ruff format src` fixes formatting.

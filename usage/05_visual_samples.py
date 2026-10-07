@@ -17,8 +17,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pipeline_v2.agent.report_pdf import markdown_to_pdf
-from pipeline_v2.agent.visual_samples import DEFAULT_MAX_RUNS, build_visual_samples
+from pine.agent.report_pdf import markdown_to_pdf
+from pine.agent.visual_samples import DEFAULT_MAX_RUNS, build_visual_samples
 
 
 def main() -> None:

@@ -11,15 +11,15 @@ from atria_core.datasets import Dataset, DatasetBuilder, DatasetConfig
 from atria_core.logger import get_logger
 from atria_core.types import DatasetSplitType, MultiPageDocumentInstance
 
-from pipeline_v2.datasets import *
-from pipeline_v2.evaluation import evaluate_dataset
-from pipeline_v2.models.qwen import (
+from pine.datasets import *
+from pine.evaluation import evaluate_dataset
+from pine.models.qwen import (
     DEFAULT_QWEN_API_URL,
     DEFAULT_QWEN_MODEL_ID,
     QwenVLConfig,
     QwenVLModel,
 )
-from pipeline_v2.sampling import dataset_load_kwargs, describe, resolve_max_samples
+from pine.sampling import dataset_load_kwargs, describe, resolve_max_samples
 
 logger = get_logger(__name__)
 

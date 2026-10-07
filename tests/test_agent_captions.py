@@ -3,7 +3,7 @@ pages that previously produced false 'Figure 1' tags."""
 
 from pathlib import Path
 
-from pipeline_v2.agent.captions import (
+from pine.agent.captions import (
     caption_tokens,
     captions_from_markdown,
     extract_page_visuals,

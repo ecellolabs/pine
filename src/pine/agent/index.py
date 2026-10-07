@@ -29,8 +29,8 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 
-from pipeline_v2.agent.captions import extract_page_visuals, verify_hints, write_visuals
-from pipeline_v2.agent.common import (
+from pine.agent.captions import extract_page_visuals, verify_hints, write_visuals
+from pine.agent.common import (
     AgentSettings,
     CostLedger,
     read_json,
@@ -38,8 +38,8 @@ from pipeline_v2.agent.common import (
     setup_logger,
     write_json,
 )
-from pipeline_v2.agent.llm import traced_model
-from pipeline_v2.agent.schemas import Hierarchy, PageSummary
+from pine.agent.llm import traced_model
+from pine.agent.schemas import Hierarchy, PageSummary
 
 SUMMARY_INSTRUCTIONS = (
     "You are indexing a long document for navigation. Given the Markdown text of "

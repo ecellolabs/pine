@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pipeline_v2.agent.common import (
+from pine.agent.common import (
     STEP_DIRS,
     AgentSettings,
     CostLedger,
@@ -33,12 +33,12 @@ from pipeline_v2.agent.common import (
     setup_logger,
     write_json,
 )
-from pipeline_v2.agent.index import run_index
-from pipeline_v2.agent.orchestrator import run_orchestrator
-from pipeline_v2.agent.parser import run_parser
-from pipeline_v2.agent.planner import run_planner
-from pipeline_v2.agent.scoring import run_eval
-from pipeline_v2.agent.verifier import run_verifier
+from pine.agent.index import run_index
+from pine.agent.orchestrator import run_orchestrator
+from pine.agent.parser import run_parser
+from pine.agent.planner import run_planner
+from pine.agent.scoring import run_eval
+from pine.agent.verifier import run_verifier
 
 
 @dataclass

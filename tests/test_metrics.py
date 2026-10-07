@@ -1,6 +1,6 @@
 import pytest
 
-from pipeline_v2.metrics import (
+from pine.metrics import (
     compute_anls,
     compute_exact_match,
     compute_f1,

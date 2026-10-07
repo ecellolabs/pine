@@ -1,6 +1,6 @@
 """Shared infrastructure for the agent runs: settings, logging, JSON helpers,
 page rendering and the cost ledger.  Model access lives in
-``pipeline_v2.agent.llm`` (Pydantic AI models with caching and tracing)."""
+``pine.agent.llm`` (Pydantic AI models with caching and tracing)."""
 
 from __future__ import annotations
 

@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pipeline_v2.agent.common import setup_logger, write_json
+from pine.agent.common import setup_logger, write_json
 
 
 def levenshtein(a: str, b: str) -> int:

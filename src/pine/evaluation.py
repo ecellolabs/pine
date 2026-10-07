@@ -15,8 +15,8 @@ from atria_core.types import (
     MultiPageDocumentInstance,
 )
 
-from pipeline_v2.metrics import compute_anls, compute_exact_match, compute_f1
-from pipeline_v2.models.qwen import QwenVLModel
+from pine.metrics import compute_anls, compute_exact_match, compute_f1
+from pine.models.qwen import QwenVLModel
 
 logger = get_logger(__name__)
 

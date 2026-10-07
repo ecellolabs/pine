@@ -13,8 +13,8 @@ from atria_core.types import DatasetSplitType
 from atria_core.visualizers import visualize
 from tqdm import tqdm
 
-from pipeline_v2.datasets import *
-from pipeline_v2.sampling import dataset_load_kwargs, describe, resolve_max_samples
+from pine.datasets import *
+from pine.sampling import dataset_load_kwargs, describe, resolve_max_samples
 
 logger = get_logger(__name__)
 
@@ -101,7 +101,7 @@ def main() -> None:
         default=None,
         help=(
             "Integer N = first N samples/decks; a name like 's0' = the exact "
-            "documents listed in sample_sets/s0.json (see pipeline_v2.sampling)."
+            "documents listed in sample_sets/s0.json (see pine.sampling)."
         ),
     )
     parser.add_argument(

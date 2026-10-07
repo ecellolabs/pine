@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pipeline_v2.sampling import (
+from pine.sampling import (
     SAMPLE_SETS_DIR,
     SampleSet,
     dataset_load_kwargs,

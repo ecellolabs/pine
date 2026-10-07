@@ -5,7 +5,7 @@ import pytest
 from docling_core.types.doc.document import DoclingDocument
 from PIL import Image
 
-from pipeline_v2.parsers.docling import (
+from pine.parsers.docling import (
     ConvertDocumentApiResponse,
     DoclingApiError,
     DoclingApiOptions,

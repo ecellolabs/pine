@@ -3,7 +3,7 @@
 Default: the Docling library runs in-process on the whole PDF (RapidOCR for
 pages without a text layer).  With ``docling_url`` the remote Docling API
 service is used instead, page by page, through
-``pipeline_v2.parsers.docling.DoclingTransform`` (the cluster setup).
+``pine.parsers.docling.DoclingTransform`` (the cluster setup).
 
 Writes:
   01_parser/pages/page_NNN.md      Docling markdown for each page
@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from pipeline_v2.agent.common import setup_logger, write_json
+from pine.agent.common import setup_logger, write_json
 
 EMPTY_FLAG = (
     "EMPTY_OR_NEAR_EMPTY (page content not captured as text; needs image inspection)"
@@ -90,7 +90,7 @@ def _parse_via_api(
 ) -> tuple[dict[int, dict[str, Any]], str, float, None]:
     from atria_core.types import MultiPageDocumentInstance
 
-    from pipeline_v2.parsers.docling import DoclingTransform
+    from pine.parsers.docling import DoclingTransform
 
     log.info("docling API mode: %s (page by page)", docling_url)
     t0 = time.perf_counter()

@@ -1,4 +1,4 @@
-from pipeline_v2.agent.scoring import anls, eval_score, extract_answer
+from pine.agent.scoring import anls, eval_score, extract_answer
 
 
 def test_str_uses_anls_with_threshold() -> None:

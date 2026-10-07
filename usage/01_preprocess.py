@@ -16,12 +16,12 @@ from atria_core.datasets import Dataset, DatasetBuilder, DatasetConfig
 from atria_core.logger import get_logger
 from atria_core.types import DatasetSplitType, MultiPageDocumentInstance
 
-from pipeline_v2.datasets import *
-from pipeline_v2.parsers.docling import (
+from pine.datasets import *
+from pine.parsers.docling import (
     DoclingApiOptions,
     DoclingTransform,
 )
-from pipeline_v2.sampling import dataset_load_kwargs, describe, resolve_max_samples
+from pine.sampling import dataset_load_kwargs, describe, resolve_max_samples
 
 logger = get_logger(__name__)
 
@@ -113,7 +113,7 @@ def main() -> None:
         default=None,
         help=(
             "Integer N = first N samples/decks; a name like 's0' = the exact "
-            "documents listed in sample_sets/s0.json (see pipeline_v2.sampling)."
+            "documents listed in sample_sets/s0.json (see pine.sampling)."
         ),
     )
     parser.add_argument("--num-workers", type=int, default=1)

@@ -33,17 +33,17 @@ from atria_core.datasets import Dataset, DatasetBuilder, DatasetConfig
 from atria_core.logger import get_logger
 from atria_core.types import AnnotationType, DatasetSplitType, MultiPageDocumentInstance
 
-from pipeline_v2.agent.common import (
+from pine.agent.common import (
     DEFAULT_API_URL,
     DEFAULT_TEXT_MODEL,
     DEFAULT_VISION_MODEL,
     AgentSettings,
     write_json,
 )
-from pipeline_v2.agent.runner import RunSpec, run_sample
-from pipeline_v2.agent.visual_samples import build_visual_samples
-from pipeline_v2.datasets import *
-from pipeline_v2.sampling import (
+from pine.agent.runner import RunSpec, run_sample
+from pine.agent.visual_samples import build_visual_samples
+from pine.datasets import *
+from pine.sampling import (
     SampleSet,
     dataset_load_kwargs,
     describe,
