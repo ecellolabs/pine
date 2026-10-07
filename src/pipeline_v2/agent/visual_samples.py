@@ -234,6 +234,7 @@ const DATA = JSON.parse(document.getElementById('data').textContent);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pj = o => esc(JSON.stringify(o, null, 2));
 const fmt$ = v => '$' + Number(v || 0).toFixed(4);
+const range = (a, b) => Array.from({length: Math.max(0, b - a + 1)}, (_, k) => a + k);
 function badge(txt, cls){return `<span class="badge ${cls}">${esc(txt)}</span>`}
 function inner(title, html, open=false){return `<details class="inner"${open?' open':''}><summary>${title}</summary><div class="in">${html}</div></details>`}
 
@@ -281,7 +282,7 @@ function renderRun(r, i){
   // ---- 2 index
   const ix=r.index; let ixHtml='';
   if(ix){
-    const tree = nodes => `<ul>${nodes.map(s=>`<li><span class="sec">[${esc(s.id)}] ${esc(s.title)}</span> <span class="small">p${s.start_page}–${s.end_page}</span>${s.subsections&&s.subsections.length?tree(s.subsections):`<ul>${range(s.start_page,s.end_page).map(p=>`<li class="pg${goldPages.has(p)?' gold':''}">p${p}: ${esc(ix.pages[p].title)} <span class="small">[${ix.pages[p].source}]</span>${goldPages.has(p)?' ★':''}</li>`).join('')}</ul>`}</li>`).join('')}</ul>`;
+    const tree = nodes => `<ul>${nodes.map(s=>`<li><span class="sec">[${esc(s.id)}] ${esc(s.title)}</span> <span class="small">p${s.start_page}–${s.end_page}</span>${s.subsections&&s.subsections.length?tree(s.subsections):`<ul>${range(s.start_page,s.end_page).map(p=>{const pInfo=ix.pages[p]||ix.pages[String(p)]||{}; const vList=[...(pInfo.figures||[]),...(pInfo.tables||[])]; const vTag=vList.length?` [${esc(vList.join('; '))}]`: (pInfo.has_visual_elements?' [Visuals]':''); return `<li class="pg${goldPages.has(p)?' gold':''}">p${p}: ${esc(pInfo.title||'Page '+p)} <span class="small">[${esc(pInfo.source||'text')}]${vTag}</span>${goldPages.has(p)?' ★':''}</li>`;}).join('')}</ul>`}</li>`).join('')}</ul>`;
     const attempts=(ix.hierarchy_attempts||[]).map(a=>`<li>attempt ${a.attempt}: ${a.n_sections!==undefined?a.n_sections+' sections, ':''}${a.problems.length?badge(a.problems.length+' problem(s)','bad')+' '+esc(a.problems.join(' · ')):badge('valid','ok')}</li>`).join('');
     ixHtml=`<div class="sum"><div><b>Top-level sections</b><span>${ix.sections.length}</span></div><div><b>Hierarchy</b><span>${ix.hierarchy_fallback_used?badge('REPAIRED (fallback)','bad'):badge('valid','ok')}</span></div><div><b>Pages summarised from image</b><span>${ix.pages_summarised_from_image}</span></div><div><b>Summary failures</b><span>${(ix.page_summary_failures||[]).length}</span></div><div><b>Index cost</b><span>${fmt$((cost.index_build_share||{}).cost_usd)}</span> <span class="small">${(cost.index_build_share||{}).llm_calls} calls</span></div></div>
     ${inner('Hierarchy build attempts (LLM output validation)',`<ul>${attempts}</ul>`,true)}
