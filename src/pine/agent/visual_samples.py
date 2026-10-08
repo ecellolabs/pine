@@ -230,6 +230,7 @@ main{max-width:1200px;margin:0 auto;padding:16px}
 .pipe{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
 .pipe a{text-decoration:none;color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:12px}
 .pipe a:hover{border-color:var(--accent)}
+.step>summary:hover,.module>summary:hover,details.inner>summary:hover{color:var(--accent)}
 .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:12px 0;overflow:hidden}
 .step>summary{cursor:pointer;padding:12px 16px;font-weight:700;font-size:15px;list-style:none;display:flex;align-items:center;gap:10px}
 .step>summary::-webkit-details-marker{display:none}
@@ -247,7 +248,7 @@ details.inner{border:1px solid var(--line);border-radius:8px;margin:6px 0;backgr
 details.inner>summary{cursor:pointer;padding:7px 10px;font-weight:600;font-size:13px}
 details.inner>.in{padding:0 10px 10px}
 details.call>summary{font-weight:500}
-.round{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:8px 12px 10px;margin:12px 0;background:var(--panel)}
+.round{border:1px solid var(--line);border-radius:10px;padding:8px 12px 10px;margin:12px 0;background:var(--panel)}
 .round h3{margin:4px 0 6px;font-size:15px}
 .round h3 .small{font-weight:500}
 .module{border:1px solid var(--line);border-radius:8px;margin:8px 0;background:var(--bg)}
@@ -258,11 +259,7 @@ details.call>summary{font-weight:500}
 .module>.in{padding:0 10px 10px;border-top:1px solid var(--line)}
 .msg{margin:6px 0}
 .msg .role{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;margin-bottom:2px}
-.msg pre{margin:0;border-left:3px solid var(--muted)}
-.msg.system pre{border-left-color:var(--accent)}
-.msg.user pre{border-left-color:var(--ok)}
-.msg.assistant pre,.msg.response pre{border-left-color:var(--warn)}
-.msg.tool pre,.msg.retry pre{border-left-color:var(--muted)}
+.msg pre{margin:0}
 .bars{display:flex;align-items:flex-end;gap:3px;height:120px;border-bottom:1px solid var(--line);padding:4px 0;overflow-x:auto}
 .bar{flex:1 0 14px;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative;cursor:pointer}
 .bar i{display:block;width:100%;background:var(--accent);opacity:.85;border-radius:2px 2px 0 0}
@@ -318,8 +315,11 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const pj = o => esc(JSON.stringify(o, null, 2));
 const fmt$ = v => '$' + Number(v || 0).toFixed(4);
 function badge(txt, cls){return `<span class="badge ${cls}">${esc(txt)}</span>`}
-function inner(title, html, open=false, cls=''){return `<details class="inner ${cls}"${open?' open':''}><summary>${title}</summary><div class="in">${html}</div></details>`}
-function module(label, title, status, html, open=true){return `<details class="module"${open?' open':''}><summary><span class="m">${esc(label)}</span>${esc(title)}<span class="st">${status}</span></summary><div class="in">${html}</div></details>`}
+// Every section, card and call is collapsed on load; the reader expands what they want.
+const OPEN_BY_DEFAULT=false;
+const openAttr = open => (open && OPEN_BY_DEFAULT) ? ' open' : '';
+function inner(title, html, open=false, cls=''){return `<details class="inner ${cls}"${openAttr(open)}><summary>${title}</summary><div class="in">${html}</div></details>`}
+function module(label, title, status, html, open=true){return `<details class="module"${openAttr(open)}><summary><span class="m">${esc(label)}</span>${esc(title)}<span class="st">${status}</span></summary><div class="in">${html}</div></details>`}
 
 // ---- model calls: one block per call showing the exact prompt (system / user / tool
 // messages) and the response.  Calls are tagged with the round they served; older
@@ -512,7 +512,7 @@ function imgFor(r,round,page){
   return `<div class="imgs">${cands.map(n=>`<figure><img src="${r.images[n]}"><figcaption>${esc(n)}</figcaption></figure>`).join('')}</div>`;
 }
 function range(a,b){const o=[];for(let p=a;p<=b;p++)o.push(p);return o}
-function step(i,k,title,status,body){return `<details class="step" id="r${i}s${k}"${k<=4?' open':''}><summary><span class="n">${k<=4?k:'·'}</span>${esc(title)}<span class="st">${status}</span></summary><div class="body">${body}</div></details>`}
+function step(i,k,title,status,body){return `<details class="step" id="r${i}s${k}"${openAttr(true)}><summary><span class="n">${k<=4?k:'·'}</span>${esc(title)}<span class="st">${status}</span></summary><div class="body">${body}</div></details>`}
 function showPage(i,p){
   const r=DATA[i]; const md=r.pages[p]||'(no markdown)'; const st=r.parser.page_stats.find(s=>s.page===p)||{};
   document.getElementById('pageview'+i).textContent=`=== page ${p} === docling ${st.docling_chars} chars · native ${st.pymupdf_chars} chars · tables ${st.tables} · pictures ${st.pictures}${st.flag?' · FLAG: '+st.flag:''}\n\n`+(md.trim()||'(empty — Docling produced no text for this page)');
@@ -539,6 +539,8 @@ function build(){
   });
 }
 build();
+// a pipeline chip opens its (collapsed) section before jumping to it
+document.addEventListener('click', e=>{const a=e.target.closest('.pipe a'); if(!a) return; const t=document.querySelector(a.getAttribute('href')); if(t) t.open=true;});
 document.getElementById('theme').onclick=()=>{const h=document.documentElement; const cur=h.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); h.dataset.theme=cur==='dark'?'light':'dark'};
 </script>
 </body></html>
