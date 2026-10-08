@@ -29,15 +29,15 @@ ever contains the key.
 | `src/pine/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
 | `src/pine/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
 | `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `planner`, `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `runner`, `visual_samples` (HTML page) |
-| `usage/0N_*.py` | stateless CLI stages; `04_agent_qa.py` runs the agent (full dataset or a selection), `05_visual_samples.py` builds the visual-samples page |
+| `usage/0N_*.py` | stateless CLI stages (00 dataset, 01 Docling preprocess, 02 agent, 03 visual page; `B0_evaluation.py` is the single-pass VLM baseline, not a stage); `02_agent_qa.py` runs the agent (full dataset or a selection), `03_visual_samples.py` builds the visual-samples page |
 | `sample_sets/*.json` | named, exact lists of (doc_id, question) so an experiment is replicable |
 | `tests/` | pytest; `ci/` the check scripts |
 
 ## Replicating the reference experiment (sample set `s0`)
 
 ```bash
-OPENROUTER_API_KEY=sk-or-... uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0
-uv run usage/05_visual_samples.py agent_runs        # -> agent_runs/visual_samples.html
+OPENROUTER_API_KEY=sk-or-... uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0
+uv run usage/03_visual_samples.py agent_runs        # -> agent_runs/visual_samples.html
 ```
 
 This produces `agent_runs/<run_id>/00_input … 06_evaluation`, `run.log`,

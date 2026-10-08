@@ -49,9 +49,9 @@ PINE/
 └── usage/                      # Sequential, stateless stage CLI drivers
     ├── 00_prepare_dataset.py   # Stage 0: Dataset ingestion, caching, & visualization
     ├── 01_preprocess.py        # Stage 1: Batch Docling OCR & layout parsing
-    ├── 03_evaluation.py        # Stage 3: single-pass VLM baseline (B0)
-    ├── 04_agent_qa.py          # Stage 4: grounded agentic DocQA (full / N docs / sample set)
-    └── 05_visual_samples.py    # Stage 5: self-contained HTML page for inspecting runs
+    ├── 02_agent_qa.py          # Stage 2: grounded agentic DocQA (full / N docs / sample set)
+    ├── 03_visual_samples.py    # Stage 3: self-contained HTML page for inspecting runs
+    └── B0_evaluation.py        # B0 baseline: single-pass VLM over page images (not a pipeline stage)
 ```
 
 ---
@@ -139,7 +139,7 @@ python usage/01_preprocess.py mmlongbench_doc --num-workers 4
 
 Already-parsed pages are skipped on re-run, so the script can be safely re-invoked to resume an interrupted run.
 
-### Step 3 — `usage/03_evaluation.py`
+### B0 baseline — `usage/B0_evaluation.py` (not a pipeline stage)
 
 Runs baseline Qwen Vision-Language model evaluation over SlideVQA samples via an external OpenAI-compatible vLLM API service, computing standard DocVQA metrics (**ANLS** with threshold 0.5, token-level **F1**, and **Exact Match**).
 
@@ -149,14 +149,14 @@ Runs baseline Qwen Vision-Language model evaluation over SlideVQA samples via an
 
 ```bash
 # Pass the cluster endpoint directly for a sample run (10 samples):
-python usage/03_evaluation.py slidevqa --api-url http://serv-3334:10001/v1 --max-samples 10 --model-id Qwen/Qwen2.5-VL-7B-Instruct
+python usage/B0_evaluation.py slidevqa --api-url http://serv-3334:10001/v1 --max-samples 10 --model-id Qwen/Qwen2.5-VL-7B-Instruct
 
 # Or export the endpoint in your environment:
 export QWEN_API_URL="http://serv-3334:10001/v1"
-python usage/03_evaluation.py slidevqa --max-samples 10
+python usage/B0_evaluation.py slidevqa --max-samples 10
 
 # Dry-run with mock inference to verify pipeline without a live server:
-python usage/03_evaluation.py slidevqa --max-samples 5 --mock
+python usage/B0_evaluation.py slidevqa --max-samples 5 --mock
 ```
 
 - `--api-url` — OpenAI-compatible vLLM API URL (e.g. `http://serv-3334:10001/v1`). Defaults to `$QWEN_API_URL` or `$VLM_BASE_URL`.
@@ -169,7 +169,7 @@ python usage/03_evaluation.py slidevqa --max-samples 5 --mock
 - `--output-file` — destination path to write summary metrics and per-question predictions JSON report.
 - `--mock` — enable mock inference for testing and CI validation without network calls.
 
-### Step 4 — `usage/04_agent_qa.py` (grounded agentic DocQA)
+### Step 3 — `usage/02_agent_qa.py` (grounded agentic DocQA)
 
 Runs the full online loop of the proposal on MMLongBench-Doc: Docling parser → PageIndex-style
 hierarchical index → planner → tool-calling orchestrator (outline / BM25 search / read page /
@@ -180,14 +180,14 @@ tools (`src/pine/agent/`); model calls go through a caching, cost-logging `Wrapp
 
 ```bash
 # the reference experiment: 3 fixed samples defined in sample_sets/s0.json (~$0.01 on OpenRouter)
-OPENROUTER_API_KEY=sk-or-... uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0
+OPENROUTER_API_KEY=sk-or-... uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0
 
 # first 2 documents, all their questions          # the whole benchmark (1,091 questions)
-uv run usage/04_agent_qa.py mmlongbench_doc --max-samples 2
-uv run usage/04_agent_qa.py mmlongbench_doc
+uv run usage/02_agent_qa.py mmlongbench_doc --max-samples 2
+uv run usage/02_agent_qa.py mmlongbench_doc
 
 # against a vLLM server instead of OpenRouter
-uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://serv-3334:10001/v1 \
+uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://serv-3334:10001/v1 \
     --text-model Qwen/Qwen2.5-7B-Instruct --vision-model Qwen/Qwen2.5-VL-7B-Instruct
 ```
 
@@ -213,7 +213,7 @@ uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://se
   Keep the cache only when nothing about the agent changed and you just want the folders rebuilt.
 - `--max-rounds`, `--max-tool-calls` — agent budgets (default 2 rounds × 12 tool calls).
 
-### Step 5 — `usage/05_visual_samples.py`
+### Step 4 — `usage/03_visual_samples.py`
 
 Builds `agent_runs/visual_samples.html`: a single self-contained page (no server, shareable) with one
 tab per run showing every step — parser bar chart and page Markdown, index tree and build attempts,
@@ -222,8 +222,8 @@ verifier quote checks, official score, per-call model costs and all logs. It is 
 sample of runs and is capped at `--max-runs` (default 20).
 
 ```bash
-uv run usage/05_visual_samples.py agent_runs
-uv run usage/05_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
+uv run usage/03_visual_samples.py agent_runs
+uv run usage/03_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
 ```
 
 `sample_sets/` also works with the other stages: `usage/00_prepare_dataset.py mmlongbench_doc --max-samples s0`
@@ -271,7 +271,7 @@ When extending or adding stages to PINE, adhere to the following design principl
 ### 5. Adding New Components (Example: LLM / GPT API Processing)
 To add a downstream component:
 1. Create a processor class under `src/pine/processors/<name>.py` that handles the transform/inference logic.
-2. Create a driver script under `usage/02_<name>.py` that loads upstream artifacts from disk, calls the processor, and writes stage results back to `<data_dir>/<name>/<split>/`.
+2. Create a driver script under `usage/04_<name>.py` that loads upstream artifacts from disk, calls the processor, and writes stage results back to `<data_dir>/<name>/<split>/`.
 
 ### 6. Downstream Agentic Pipeline Handoff
 Once a dataset has been mapped to its final PydanticAI form, dump it to JSON. Those JSON files are the handoff point, loaded independently by the main Agentic Pipeline. This repository's responsibility ends there; it strictly prepares datasets.

@@ -1,4 +1,5 @@
-"""CLI entrypoint to run baseline Qwen Vision-Language model evaluation on SlideVQA via API."""
+"""B0 baseline (not a PINE pipeline stage): single-pass Qwen Vision-Language model
+evaluation over page images on SlideVQA via an OpenAI-compatible API."""
 
 from __future__ import annotations
 

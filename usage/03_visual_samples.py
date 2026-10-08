@@ -1,10 +1,10 @@
-"""Stage 5: build (or rebuild) ``visual_samples.html``, a self-contained page
+"""Stage 3: build (or rebuild) ``visual_samples.html``, a self-contained page
 that visualises every step (parser, index, planner, orchestrator, verifier,
 evaluation, model calls, logs) of the first N runs in an agent-runs folder
-produced by ``usage/04_agent_qa.py``.
+produced by ``usage/02_agent_qa.py``.
 
-    uv run usage/05_visual_samples.py agent_runs
-    uv run usage/05_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
+    uv run usage/03_visual_samples.py agent_runs
+    uv run usage/03_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
 
 The page needs no server: every run's logs, traces, page Markdown, thumbnails
 and model calls are inlined, so the single file can be shared as is.  Because

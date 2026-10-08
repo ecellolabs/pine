@@ -1,4 +1,4 @@
-"""Stage 4: run the grounded agentic DocQA pipeline (parser -> index -> planner
+"""Stage 2: run the grounded agentic DocQA pipeline (parser -> index -> planner
 -> orchestrator -> verifier -> official scorer) over a dataset, or over a
 selection of it (``--max-samples N`` or a sample set such as ``s0``), writing
 one fully traced folder per question.
@@ -6,17 +6,17 @@ one fully traced folder per question.
 Examples::
 
     # Replicate the reference experiment (3 fixed samples from sample_sets/s0.json)
-    OPENROUTER_API_KEY=... uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0
+    OPENROUTER_API_KEY=... uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0
 
     # First 2 documents of the split, every question of each document
-    OPENROUTER_API_KEY=... uv run usage/04_agent_qa.py mmlongbench_doc --max-samples 2
+    OPENROUTER_API_KEY=... uv run usage/02_agent_qa.py mmlongbench_doc --max-samples 2
 
     # Same, against a vLLM server (OpenAI-compatible) instead of OpenRouter
-    uv run usage/04_agent_qa.py mmlongbench_doc --max-samples s0 \
+    uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0 \
         --api-url http://serv-3334:10001/v1 --text-model Qwen/Qwen2.5-7B-Instruct \
         --vision-model Qwen/Qwen2.5-VL-7B-Instruct
 
-Afterwards build the HTML visual-samples page (first 20 runs) with ``usage/05_visual_samples.py``.
+Afterwards build the HTML visual-samples page (first 20 runs) with ``usage/03_visual_samples.py``.
 """
 
 from __future__ import annotations
