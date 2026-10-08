@@ -12,16 +12,21 @@ from ``manifest.json`` when present, otherwise every sub-folder with
 The page groups the agent loop **per round** (planner -> orchestrator ->
 verifier), shows the exact system and user prompts of every model call, lists
 all model calls in execution order and prints ``run.log`` (whose lines name the
-``module.py:function`` that wrote them)."""
+``module.py:function`` that wrote them).  Every page of the PDF is inlined as a
+small JPEG so the input shows a sample page, ``read_page`` results show the page
+next to the Markdown the model received, and the parser page viewer shows both."""
 
 from __future__ import annotations
 
 import base64
 import io
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
+
+from pine.agent.common import render_page
 
 
 def thumb(path: Path, width: int = 520) -> str:
@@ -32,6 +37,24 @@ def thumb(path: Path, width: int = 520) -> str:
     buf = io.BytesIO()
     im.convert("RGB").save(buf, "JPEG", quality=70)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def page_thumbs(pdf: Path, n_pages: int, max_side: int = 560) -> dict[int, str]:
+    """Data-URI JPEG of every page (small, for the input sample, the read_page
+    results and the parser page viewer); empty when the PDF copy is missing."""
+    if not pdf.is_file() or n_pages <= 0:
+        return {}
+    out: dict[int, str] = {}
+    for p in range(1, n_pages + 1):
+        try:
+            jpeg = render_page(pdf, p, max_side=max_side, quality=60)
+        except Exception as exc:  # noqa: BLE001  (corrupt page: leave it out)
+            logging.getLogger("visual_samples").warning(
+                "page %d not rendered: %s", p, exc
+            )
+            continue
+        out[p] = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    return out
 
 
 def jsonl(path: Path) -> list[Any]:
@@ -155,7 +178,10 @@ def collect(d: Path) -> dict[str, Any]:
         if p.exists():
             step_logs[step] = p.read_text(encoding="utf-8")
     calls = jsonl(d / "llm_calls.jsonl")
+    n_pages = int((index or {}).get("n_pages") or (parser or {}).get("pages") or 0)
+    page_imgs = page_thumbs(d / "00_input" / str(q.get("doc_id") or ""), n_pages)
     return {
+        "page_imgs": page_imgs,
         "meta": run,
         "question": q,
         "parser": parser,
@@ -262,6 +288,10 @@ details.call>summary{font-weight:500}
 .imgs figure{margin:0;width:240px}
 .imgs img{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff}
 .imgs figcaption{font-size:11px;color:var(--muted);margin-top:3px}
+.pageview{display:grid;grid-template-columns:300px 1fr;gap:10px;align-items:start}
+.pageview img{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff}
+.pageview img[src=""]{display:none}
+@media (max-width:800px){.pageview{grid-template-columns:1fr}}
 .pager{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .pager button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:2px 7px;font-size:12px;cursor:pointer}
 .pager button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -351,8 +381,9 @@ function renderRun(r, i){
 
   // ---- 0 input
   const goldImgs = Object.entries(r.gold_imgs).map(([n,src])=>`<figure><img src="${src}"><figcaption>${esc(n)} (gold evidence)</figcaption></figure>`).join('');
+  const sampleImg = r.page_imgs[1] ? `<figure><img src="${r.page_imgs[1]}"><figcaption>${esc(r.meta.doc_id)} — page 1 (document sample)</figcaption></figure>` : '';
   h += step(i,0,'Input', `${goldPages.size} gold page(s)`, `
-    <div class="imgs">${goldImgs||'<span class="small">No gold evidence page (question is unanswerable).</span>'}</div>
+    <div class="imgs">${sampleImg}${goldImgs||'<figure><figcaption class="small" style="width:240px">No gold evidence page (question is unanswerable).</figcaption></figure>'}</div>
     ${inner('question.json', `<pre>${pj(q)}</pre>`)}`);
 
   // ---- 1 parser
@@ -365,7 +396,7 @@ function renderRun(r, i){
     <div class="bars">${bars}</div><div class="legend"><i style="background:var(--accent)"></i>Docling markdown chars <i style="background:var(--muted);opacity:.4"></i>native (PyMuPDF) chars <i style="background:var(--bad)"></i>flagged page · ★ gold evidence page · click a bar to read the page</div>
     ${flagged.length?inner(`Flagged pages (${flagged.length})`,`<table><tr><th>page</th><th>docling chars</th><th>native chars</th><th>flag</th></tr>${flagged.map(s=>`<tr><td>${s.page}</td><td>${s.docling_chars}</td><td>${s.pymupdf_chars}</td><td>${esc(s.flag)}</td></tr>`).join('')}</table>`,true):''}
     <div class="pager" id="pager${i}">${ps.page_stats.map(s=>`<button class="${s.flag?'flag ':''}${goldPages.has(s.page)?'gold':''}" onclick="showPage(${i},${s.page})">${s.page}</button>`).join('')}</div>
-    <pre id="pageview${i}" class="small">Click a page number to see its Docling Markdown.</pre>`;
+    <div class="pageview"><img id="pageimg${i}" src="" alt=""><pre id="pageview${i}" class="small">Click a page number to see its page image and Docling Markdown.</pre></div>`;
   } else parserHtml='<span class="small">parser output missing</span>';
   h += step(i,1,'Parser — Docling + RapidOCR (no model call)', ps?`${ps.pages_flagged}/${ps.pages} pages flagged`:'', parserHtml);
 
@@ -420,7 +451,12 @@ function renderRun(r, i){
         const full=r.tool_results[key];
         const isImg=e.tool==='inspect_page_image';
         const err=String(e.result).startsWith('ERROR');
-        return `<div class="ev${err?' err':''}"><div class="small">turn ${e.turn} · tool result · <b>${esc(e.tool)}</b></div>${inner(`${esc(e.tool)}(${esc(JSON.stringify(e.args))})`,`<pre>${esc(full!==undefined?full.replace(/^ARGS:.*\n\n/,''):e.result)}</pre>${isImg?imgFor(r,'round'+N,e.args.page):''}`, isImg||e.tool==='record_evidence')}</div>`;
+        const isRead=e.tool==='read_page';
+        const body=`<pre>${esc(full!==undefined?full.replace(/^ARGS:.*\n\n/,''):e.result)}</pre>`;
+        const shown = isImg ? body+imgFor(r,'round'+N,e.args.page)
+                    : isRead ? `<div class="pageview">${pageFig(r,e.args.page,'page '+e.args.page+' as rendered from the PDF (the model received the Markdown on the right)')}${body}</div>`
+                    : body;
+        return `<div class="ev${err?' err':''}"><div class="small">turn ${e.turn} · tool result · <b>${esc(e.tool)}</b></div>${inner(`${esc(e.tool)}(${esc(JSON.stringify(e.args))})`, shown, isImg||isRead||e.tool==='record_evidence')}</div>`;
       }
       if(e.event==='final') return `<div class="ev final"><div class="t">final_answer → ${esc(e.status)}: <code>${esc(e.answer)}</code> · pages ${esc(JSON.stringify(e.evidence_pages))}${e.salvaged?' '+badge('forced (budget/behaviour failure)','warn'):''}</div><div class="small">${esc(e.reasoning)}</div></div>`;
       return '';
@@ -466,6 +502,10 @@ function renderRun(r, i){
   h += step(i,6,'Logs — execution order (each line names the module.py:function that wrote it)', '', inner('run.log — all steps, in execution order',`<pre style="max-height:640px">${esc(r.logs['run.log']||'')}</pre>`,true)+(r.logs['driver.log']?inner('driver.log (runner only)',`<pre>${esc(r.logs['driver.log'])}</pre>`):'')+inner('Per-step logs',stepLogs));
   return h+'</section>';
 }
+function pageFig(r,page,caption){
+  const src=r.page_imgs[page]; if(!src) return '<div class="small">(no page image)</div>';
+  return `<figure style="margin:0"><img src="${src}" style="width:100%;border:1px solid var(--line);border-radius:6px;background:#fff"><figcaption class="small">${esc(caption)}</figcaption></figure>`;
+}
 function imgFor(r,round,page){
   const cands=Object.keys(r.images).filter(n=>n.startsWith(round+'_page'+String(page).padStart(3,'0')));
   if(!cands.length) return '';
@@ -476,6 +516,7 @@ function step(i,k,title,status,body){return `<details class="step" id="r${i}s${k
 function showPage(i,p){
   const r=DATA[i]; const md=r.pages[p]||'(no markdown)'; const st=r.parser.page_stats.find(s=>s.page===p)||{};
   document.getElementById('pageview'+i).textContent=`=== page ${p} === docling ${st.docling_chars} chars · native ${st.pymupdf_chars} chars · tables ${st.tables} · pictures ${st.pictures}${st.flag?' · FLAG: '+st.flag:''}\n\n`+(md.trim()||'(empty — Docling produced no text for this page)');
+  document.getElementById('pageimg'+i).src=r.page_imgs[p]||'';
   document.querySelectorAll('#pager'+i+' button').forEach(b=>b.classList.toggle('sel',b.textContent==String(p)));
   document.getElementById('pageview'+i).scrollIntoView({block:'nearest'});
 }
