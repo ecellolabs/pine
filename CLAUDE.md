@@ -40,17 +40,28 @@ OPENROUTER_API_KEY=sk-or-... uv run usage/02_agent_qa.py mmlongbench_doc --max-s
 uv run usage/03_visual_samples.py agent_runs        # -> agent_runs/visual_samples.html
 ```
 
-This produces `agent_runs/<run_id>/00_input … 06_evaluation`, `run.log`,
-`llm_calls.jsonl`, `cost.json`, `summary.md` per question, `agent_runs/manifest.json`
-and `agent_runs/visual_samples.html` (self-contained, first 20 runs). The three
-`s0` samples cost about $0.01 in total on OpenRouter; responses are cached under
-`agent_runs/.cache/llm` so re-runs are free.
+Every invocation writes one **batch folder** `agent_runs/<selection>_<YYYY-MM-DD>[_<n>]/`
+(`s0_2026-10-08`; a second run of the same selection on the same day becomes
+`s0_2026-10-08_2`; integer selections give `first3_…`, the full dataset `full_…`;
+`--batch-name` overrides). The batch folder holds `<run_id>/00_input … 06_evaluation`,
+`run.log`, `llm_calls.jsonl`, `cost.json`, `summary.md` per question, `manifest.json`
+(batch name, start time, exact command, settings, per-run scores) and
+`visual_samples.html` (self-contained, first 20 runs). The three `s0` samples cost
+about $0.01 in total on OpenRouter.
 
-**Rule: always reset the cache before re-running samples** (`rm -rf agent_runs/.cache/llm`, or a
-fresh `--cache-dir`). A warm cache replays earlier replies to identical requests, so the run shows
-the cached behaviour, not the model's. Keep the cache only for pure rebuilds (HTML, parser-only
-changes) where no model behaviour is being evaluated. Quote the expected cost to the user before
-any run that misses the cache.
+**Cache rule.** The LLM response cache lives inside the batch folder
+(`<batch>/.cache/llm`), so a new invocation never replays an earlier batch: every
+batch shows the model's live behaviour. The old rule still applies whenever a cache is
+reused on purpose (`--batch-name` pointing at an existing batch, or `--cache-dir`):
+reset it before evaluating model behaviour, keep it only for pure rebuilds (HTML,
+parser-only changes). Quote the expected cost to the user before any run that misses
+the cache.
+
+`usage/03_visual_samples.py agent_runs` rebuilds the page for the **newest** batch;
+pass a batch folder to pick one. The page groups the agent loop per round
+(planner → orchestrator → verifier), shows the exact system/user prompt of every model
+call (index, planner, navigator turns, vision inspections, verifier), lists all calls in
+execution order and prints `run.log`, whose lines carry `module.py:function`.
 
 `--max-samples` decides the scope: omitted = the **full** dataset; integer `N` =
 the first N documents (add `--questions-per-doc K` to limit questions per
@@ -66,14 +77,16 @@ on the cluster pass `--vision-model Qwen/Qwen2.5-VL-7B-Instruct --api-url http:/
 
 ## Analysing an agent_runs folder
 
-Start with `agent_runs/<run>/summary.md`, then:
+Pick the batch (`agent_runs/<selection>_<date>[_n>]/`, see its `manifest.json`), start with
+`<batch>/<run>/summary.md`, then:
 
 - parser issues -> `01_parser/page_stats.json` (`flag` per page, Docling vs native chars)
 - index issues -> `02_index/index.json` (`hierarchy_attempts`, `hierarchy_fallback_used`, `validation_problems_final`), `outline.md`
 - orchestration / tool calling -> `04_orchestrator/trace_round1.jsonl`, `anomalies_round1.json`, `tool_results/`, `images_viewed/`
 - grounding -> `05_evidence_verifier/verification_round1.json` (`quote_checks`, `llm_verdict`, `decision`)
 - score -> `06_evaluation/result.json` (`score_official_rule`, `cited_page_hit`, `gold_page_visited_by_agent`)
-- cost/latency -> `cost.json`, `llm_calls.jsonl`
+- cost/latency -> `cost.json`, `llm_calls.jsonl` (each record has `step`, `round`, `purpose`, the full request messages and the response)
+- execution order -> `run.log` (`timestamp | level | stepN.name | module.py:function | message`; first line is the driver command)
 
 Slash commands in `.claude/commands/`: `/run-agent`, `/visual-samples`, `/analyze-runs`.
 

@@ -10,6 +10,6 @@ Steps:
    ```bash
    uv run usage/02_agent_qa.py mmlongbench_doc --max-samples ${1:-s0}
    ```
-   The first run parses each PDF with Docling (1–4 s/page) and builds the index; later runs reuse the cached parser output and LLM responses.
-3. When it finishes, confirm `agent_runs/manifest.json` and `agent_runs/visual_samples.html` exist, and report per-run score, answer, cost and any `FAILED` entries from the printed table.
-4. If a run failed, open `agent_runs/<run_id>/run.log` and `driver.log`, explain the cause, and fix the code (not the data) before re-running.
+   Every invocation writes a new batch folder `agent_runs/<selection>_<YYYY-MM-DD>[_<n>]/` with a cold LLM cache (so quote the expected cost first: s0 ≈ $0.01, s1 ≈ $0.005). Each PDF is parsed with Docling (1–4 s/page) and indexed inside that batch.
+3. When it finishes, the printed table ends with `batch folder:` and `visual samples:`; confirm `<batch>/manifest.json` and `<batch>/visual_samples.html` exist, and report per-run score, answer, cost and any `FAILED` entries.
+4. If a run failed, open `<batch>/<run_id>/run.log` and `driver.log`, explain the cause, and fix the code (not the data) before re-running.

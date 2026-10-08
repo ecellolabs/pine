@@ -18,3 +18,4 @@ evaluation_results/
 
 # Agent runs (traces, PDF copies, LLM cache) - regenerate with usage/04_agent_qa.py
 agent_runs/
+.claude/launch.json

@@ -3,6 +3,7 @@ driven by scripted ``FunctionModel``s (no real model is ever called)."""
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,11 @@ from pine.agent.index import _repair, _validate_tree, run_index
 from pine.agent.orchestrator import BM25, TOOL_NAMES, run_orchestrator
 from pine.agent.planner import run_planner
 from pine.agent.verifier import decide, quote_in_text, run_verifier
-from pine.agent.visual_samples import build_visual_samples, discover_runs
+from pine.agent.visual_samples import (
+    build_visual_samples,
+    discover_runs,
+    resolve_runs_dir,
+)
 
 PAGE2 = (
     "## National Atmospheric Research Laboratory (NARL)\n"
@@ -327,7 +332,14 @@ def test_orchestrator_with_scripted_model(tmp_path: Path) -> None:
     assert events.count("tool_result") == 4
     results = run_dir / "04_orchestrator" / "tool_results"
     assert (results / "round1_call02_read_page.txt").exists()
-    assert (run_dir / "04_orchestrator" / "llm_calls.jsonl").exists()
+    calls = [
+        json.loads(line)
+        for line in (run_dir / "04_orchestrator" / "llm_calls.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    assert calls and all(c["round"] == 1 for c in calls)
+    assert all("system" in {m["role"] for m in c["request"]["messages"]} for c in calls)
 
     # verifier on top of this final (stubbed verdict: supported)
     ver_settings = _settings(
@@ -530,6 +542,20 @@ def test_visual_samples_html_is_self_contained_and_capped(tmp_path: Path) -> Non
         )
     )
     assert [p.name for p in discover_runs(tmp_path)] == ["run_c", "run_a", "run_b"]
+    # a run listed twice in the manifest (re-run appended) is shown once
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {"run_id": "run_c"},
+                    {"run_id": "run_c"},
+                    {"run_id": "run_a"},
+                    {"run_id": "run_b"},
+                ]
+            }
+        )
+    )
+    assert [p.name for p in discover_runs(tmp_path)] == ["run_c", "run_a", "run_b"]
     out = build_visual_samples(tmp_path)
     html = out.read_text()
     assert out.name == "visual_samples.html"
@@ -540,3 +566,38 @@ def test_visual_samples_html_is_self_contained_and_capped(tmp_path: Path) -> Non
     assert '"run_c"' in html2 and '"run_a"' in html2 and '"run_b"' not in html2
     with pytest.raises(FileNotFoundError):
         build_visual_samples(tmp_path / "empty")
+
+
+def test_visual_samples_resolves_newest_batch_folder(tmp_path: Path) -> None:
+    root = tmp_path / "agent_runs"
+    older = root / "s0_2026-10-07"
+    newer = root / "s0_2026-10-08"
+    for batch in (older, newer):
+        _fake_run(batch, "run_x")
+        (batch / "manifest.json").write_text(
+            json.dumps({"batch": batch.name, "runs": [{"run_id": "run_x"}]})
+        )
+    os.utime(older / "manifest.json", (1, 1))
+    assert resolve_runs_dir(root) == newer
+    assert resolve_runs_dir(newer) == newer
+    out = build_visual_samples(root)
+    assert out == newer / "visual_samples.html"
+    assert '"batch": "s0_2026-10-08"' in out.read_text()
+
+
+def test_batch_dir_naming(tmp_path: Path) -> None:
+    from pine.agent.common import batch_label, new_batch_dir
+    from pine.sampling import resolve_max_samples
+
+    assert batch_label(resolve_max_samples("s0")) == "s0"
+    assert batch_label(3) == "first3"
+    assert batch_label(None) == "full"
+    first = new_batch_dir(tmp_path, "s0", date="2026-10-08")
+    second = new_batch_dir(tmp_path, "s0", date="2026-10-08")
+    third = new_batch_dir(tmp_path, "s0", date="2026-10-08")
+    assert [first.name, second.name, third.name] == [
+        "s0_2026-10-08",
+        "s0_2026-10-08_2",
+        "s0_2026-10-08_3",
+    ]
+    assert first.is_dir() and third.is_dir()

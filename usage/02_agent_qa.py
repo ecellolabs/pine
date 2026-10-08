@@ -26,6 +26,7 @@ import os
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")  # keep run logs clean
 import sys
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -38,6 +39,8 @@ from pine.agent.common import (
     DEFAULT_TEXT_MODEL,
     DEFAULT_VISION_MODEL,
     AgentSettings,
+    batch_label,
+    new_batch_dir,
     write_json,
 )
 from pine.agent.runner import RunSpec, run_sample
@@ -174,7 +177,18 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=Path("./agent_runs"),
-        help="Where run folders are written (default: ./agent_runs).",
+        help=(
+            "Root for batch folders (default: ./agent_runs). Each invocation writes "
+            "<output-dir>/<selection>_<YYYY-MM-DD>[_<n>]/ (e.g. s0_2026-10-08, "
+            "first3_2026-10-08_2, full_2026-10-08) holding the run folders, "
+            "manifest.json and visual_samples.html."
+        ),
+    )
+    parser.add_argument(
+        "--batch-name",
+        type=str,
+        default=None,
+        help="Override the batch folder name (default: <selection>_<date>[_<n>]).",
     )
     parser.add_argument(
         "--api-url",
@@ -216,7 +230,7 @@ def main() -> None:
         "--cache-dir",
         type=Path,
         default=None,
-        help="LLM response cache (default: <output-dir>/.cache/llm). Identical requests are never paid for twice.",
+        help="LLM response cache (default: <batch-dir>/.cache/llm, i.e. fresh for every batch). Identical requests are never paid for twice.",
     )
     parser.add_argument(
         "--docling-url",
@@ -233,7 +247,7 @@ def main() -> None:
     parser.add_argument(
         "--no-html",
         action="store_true",
-        help="Do not (re)build <output-dir>/visual_samples.html at the end.",
+        help="Do not (re)build <batch-dir>/visual_samples.html at the end.",
     )
     args = parser.parse_args()
 
@@ -259,8 +273,14 @@ def main() -> None:
         print("Nothing to run (no matching samples).", file=sys.stderr)
         sys.exit(1)
 
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.batch_name:
+        batch_dir = args.output_dir / args.batch_name
+        batch_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        batch_dir = new_batch_dir(args.output_dir, batch_label(resolved))
     settings = AgentSettings(
-        output_dir=args.output_dir,
+        output_dir=batch_dir,
         api_url=args.api_url,
         api_key=args.api_key,
         text_model=args.text_model,
@@ -271,15 +291,17 @@ def main() -> None:
         docling_url=args.docling_url,
         rapidocr_backend=args.rapidocr_backend,
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, Any] = {
+        "batch": batch_dir.name,
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "command": " ".join(sys.argv),
         "dataset": args.name,
         "selection": describe(resolved),
         "sample_set": resolved.name if isinstance(resolved, SampleSet) else None,
         "settings": settings.public(),
         "runs": [],
     }
-    logger.info(f"{len(specs)} sample run(s) -> {args.output_dir.resolve()}")
+    logger.info(f"{len(specs)} sample run(s) -> {batch_dir.resolve()}")
     results = []
     for i, spec in enumerate(specs, 1):
         logger.info(f"[{i}/{len(specs)}] {spec.run_id}: {spec.question!r}")
@@ -307,7 +329,7 @@ def main() -> None:
                     "error": str(exc),
                 }
             )
-        write_json(args.output_dir / "manifest.json", manifest)
+        write_json(batch_dir / "manifest.json", manifest)
 
     scored = [r["score_official_rule"] for r in results]
     print("\n" + "=" * 70)
@@ -325,10 +347,11 @@ def main() -> None:
             f"  mean official-rule score: {sum(scored) / len(scored):.3f} over {len(scored)} question(s)"
         )
     print(f"  total cost: ${sum(r['cost']['cost_usd'] for r in results):.4f}")
+    print(f"  batch folder: {batch_dir.resolve()}")
     print("=" * 70)
     if not args.no_html and results:
-        out = build_visual_samples(args.output_dir)
-        print(f"  dashboard: {out}")
+        out = build_visual_samples(batch_dir)
+        print(f"  visual samples: {out.resolve()}")
 
 
 if __name__ == "__main__":

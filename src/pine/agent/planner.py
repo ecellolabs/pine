@@ -64,6 +64,7 @@ def run_planner(
         step_name="03_planner",
     )
     model.purpose = f"plan_round{round_no}"
+    model.round_no = round_no
     agent: Agent[None, Plan] = Agent(
         model,
         output_type=ToolOutput(Plan, name="Plan"),

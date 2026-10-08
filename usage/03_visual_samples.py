@@ -1,9 +1,11 @@
 """Stage 3: build (or rebuild) ``visual_samples.html``, a self-contained page
 that visualises every step (parser, index, planner, orchestrator, verifier,
 evaluation, model calls, logs) of the first N runs in an agent-runs folder
-produced by ``usage/02_agent_qa.py``.
+produced by ``usage/02_agent_qa.py``.  ``runs_dir`` is a batch folder
+(``agent_runs/s0_2026-10-08``) or the root ``agent_runs`` (newest batch).
 
     uv run usage/03_visual_samples.py agent_runs
+    uv run usage/03_visual_samples.py agent_runs/s0_2026-10-08
     uv run usage/03_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
 
 The page needs no server: every run's logs, traces, page Markdown, thumbnails
@@ -30,7 +32,7 @@ def main() -> None:
         type=Path,
         nargs="?",
         default=Path("./agent_runs"),
-        help="Folder containing the run sub-folders (default: ./agent_runs).",
+        help="Batch folder, or the root agent_runs folder (newest batch) (default: ./agent_runs).",
     )
     parser.add_argument(
         "--max-runs",

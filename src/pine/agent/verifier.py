@@ -184,6 +184,7 @@ def run_verifier(
         model_settings=ModelSettings(temperature=0.0, max_tokens=400),
     )
     model.purpose = f"verify_round{round_no}"
+    model.round_no = round_no
     llm_verdict: dict[str, Any]
     try:
         llm_verdict = agent.run_sync(

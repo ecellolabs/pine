@@ -175,7 +175,8 @@ class TracedModel(WrapperModel):
     """Wraps any Pydantic AI model with a sha256-keyed on-disk cache, a jsonl
     trace per step (and per run) and cost accounting.
 
-    Set ``purpose`` before an agent run so the trace says what the call was for."""
+    Set ``purpose`` (and ``round_no`` inside the plan/act/verify loop) before an
+    agent run so the trace says what the call was for and which round it served."""
 
     def __init__(
         self,
@@ -194,6 +195,8 @@ class TracedModel(WrapperModel):
         self.logger = logger
         self.step_name = step_name
         self.purpose = ""
+        # plan/act/verify round the call belongs to (None for index-build calls)
+        self.round_no: int | None = None
         self.cache_dir = settings.llm_cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.trace_path = step_dir / "llm_calls.jsonl"
@@ -251,6 +254,7 @@ class TracedModel(WrapperModel):
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "step": self.step_name,
             "purpose": self.purpose,
+            "round": self.round_no,
             "model": self.wrapped.model_name,
             "from_cache": from_cache,
             "latency_s": round(latency, 2),

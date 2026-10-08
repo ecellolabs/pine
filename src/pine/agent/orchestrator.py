@@ -598,6 +598,8 @@ def run_orchestrator(
         logger=log,
         step_name="04_orchestrator",
     )
+    text_model.round_no = round_no
+    vision_model.round_no = round_no
     max_tool_calls = settings.max_tool_calls
 
     pages_md = {

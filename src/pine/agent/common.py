@@ -69,15 +69,47 @@ class AgentSettings:
         }
 
 
+# --------------------------------------------------------------------------- batch folders
+def batch_label(selection: Any) -> str:
+    """Folder label for a ``--max-samples`` value: sample-set name, ``firstN`` or ``full``."""
+    name = getattr(selection, "name", None)
+    if name:
+        return str(name)
+    if isinstance(selection, int):
+        return f"first{selection}"
+    return "full"
+
+
+def new_batch_dir(root: Path, label: str, date: str | None = None) -> Path:
+    """Create and return ``root/<label>_<YYYY-MM-DD>``; if that folder already exists
+    (a copy of the same experiment on the same day) append ``_2``, ``_3``, ..."""
+    import datetime as _dt
+
+    day = date or _dt.datetime.now().astimezone().date().isoformat()
+    base = root / f"{label}_{day}"
+    candidate = base
+    n = 1
+    while candidate.exists():
+        n += 1
+        candidate = root / f"{label}_{day}_{n}"
+    candidate.mkdir(parents=True)
+    return candidate
+
+
 # --------------------------------------------------------------------------- logging
 def setup_logger(
     name: str, log_file: Path, run_log: Path | None = None
 ) -> logging.Logger:
-    """Logger writing to a per-step file, the combined run.log and stderr."""
+    """Logger writing to a per-step file, the combined run.log and stderr.
+
+    Every line names the step logger and the ``module.py:function`` that emitted
+    it, so ``run.log`` reads as an execution trace of the source files."""
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     logger.handlers.clear()
-    fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s")
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)-7s | %(name)s | %(module)s.py:%(funcName)s | %(message)s"
+    )
     log_file.parent.mkdir(parents=True, exist_ok=True)
     for path in [log_file, run_log] if run_log else [log_file]:
         handler = logging.FileHandler(path, encoding="utf-8")

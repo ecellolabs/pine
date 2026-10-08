@@ -195,34 +195,46 @@ uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://se
   **a name such as `s0`**: the exact `(doc_id, question)` list in `sample_sets/s0.json`
   (a `.json` path also works), so anyone can replicate the same experiment; **omitted**: the full dataset.
   Integer selection also accepts `--questions-per-doc K`.
-- `--output-dir` (default `./agent_runs`) — one folder per question:
+- `--output-dir` (default `./agent_runs`) — the root for **batch folders**. Every invocation
+  creates `<output-dir>/<selection>_<YYYY-MM-DD>[_<n>]/` (`s0_2026-10-08`; a second run of the
+  same selection that day is `s0_2026-10-08_2`; integers give `first3_…`, the full dataset
+  `full_…`; `--batch-name` overrides). Inside the batch: one folder per question with
   `00_input/` (question, gold, PDF copy, gold page thumbnails) · `01_parser/` (per-page Markdown,
   `page_stats.json` with Docling-vs-native text diagnostics) · `02_index/` (`outline.md`, `index.json`,
   page summaries) · `03_planner/` · `04_orchestrator/` (`trace_roundN.jsonl`, `tool_results/`,
   `images_viewed/`, `anomalies_roundN.json`) · `05_evidence_verifier/` · `06_evaluation/result.json`,
-  plus `run.log`, `llm_calls.jsonl`, `cost.json`, `summary.md`; and `manifest.json` at the top.
+  plus `run.log` (execution order, each line tagged `module.py:function`), `llm_calls.jsonl` (every
+  model call with `step`, `round`, `purpose`, full prompt and response), `cost.json`, `summary.md`;
+  and at the batch root `manifest.json` (batch name, start time, exact command, settings, scores)
+  and `visual_samples.html`.
 - `--api-url` / `--api-key` / `--text-model` / `--vision-model` — any OpenAI-compatible endpoint
   (`$OPENROUTER_API_KEY` or `$QWEN_API_KEY` + `$QWEN_API_URL`). Defaults: OpenRouter,
   `qwen/qwen-2.5-7b-instruct` for text roles and `qwen/qwen3-vl-8b-instruct` for page images
   (Qwen2.5-VL-7B-Instruct is not served on OpenRouter).
 - `--docling-url` — use the cluster's Docling API instead of the in-process library (RapidOCR).
-- `--cache-dir` — LLM response cache (default `<output-dir>/.cache/llm`); identical requests are free.
+- `--cache-dir` — LLM response cache (default `<batch-dir>/.cache/llm`, so each batch starts
+  cold and shows the model's live behaviour); identical requests within a batch are free.
 - **Rule: reset the cache before re-running samples you want to re-evaluate.** The cache replays
   the model's earlier reply to any identical request, so a re-run with a warm cache measures the
-  cache, not the model: `rm -rf agent_runs/.cache/llm` (or pass a fresh `--cache-dir`) first.
-  Keep the cache only when nothing about the agent changed and you just want the folders rebuilt.
+  cache, not the model. New batches are cold automatically; when you reuse one (`--batch-name` of
+  an existing batch, or a shared `--cache-dir`) delete its `.cache/llm` first. Keep the cache only
+  when nothing about the agent changed and you just want the folders rebuilt.
 - `--max-rounds`, `--max-tool-calls` — agent budgets (default 2 rounds × 12 tool calls).
 
 ### Step 4 — `usage/03_visual_samples.py`
 
-Builds `agent_runs/visual_samples.html`: a single self-contained page (no server, shareable) with one
-tab per run showing every step — parser bar chart and page Markdown, index tree and build attempts,
-plan, the orchestrator timeline with tool results and the exact images sent to the vision model,
-verifier quote checks, official score, per-call model costs and all logs. It is meant for inspecting a
-sample of runs and is capped at `--max-runs` (default 20).
+Builds `<batch>/visual_samples.html` (given the root `agent_runs`, the newest batch is used): a
+single self-contained page (no server, shareable) with one tab per run showing every step — parser
+bar chart and page Markdown, index tree and build attempts, then the **agent loop grouped per
+round** (planner → orchestrator → verifier, each with the exact system and user prompts sent to
+Qwen, the tool-calling timeline with tool results, the images sent to the vision model and the
+verifier quote checks), the official score, every model call in execution order with its full
+prompt and response, and `run.log`. It is meant for inspecting a sample of runs and is capped at
+`--max-runs` (default 20).
 
 ```bash
-uv run usage/03_visual_samples.py agent_runs
+uv run usage/03_visual_samples.py agent_runs                 # newest batch under agent_runs/
+uv run usage/03_visual_samples.py agent_runs/s0_2026-10-08   # a specific batch
 uv run usage/03_visual_samples.py agent_runs --max-runs 5 --out ~/Desktop/visual_samples.html
 ```
 
