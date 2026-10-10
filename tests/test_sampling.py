@@ -73,3 +73,20 @@ def test_sample_set_errors(tmp_path: Path) -> None:
         dataset_load_kwargs(
             SampleSet.from_dict({"name": "p", "samples": [{"doc_id": "d"}]}), "slidevqa"
         )
+
+
+def test_s2_sample_set_extends_s0() -> None:
+    s0 = resolve_max_samples("s0")
+    s2 = resolve_max_samples("s2")
+    assert isinstance(s0, SampleSet) and isinstance(s2, SampleSet)
+    assert s2.name == "s2"
+    assert s2.dataset == "mmlongbench_doc"
+    assert s2.extra.get("extends") == "s0"
+    assert len(s2.samples) == 10
+    assert len(s2.doc_ids) == 10, "one document per sample"
+    run_ids = [s.run_id for s in s2.samples]
+    assert len(set(run_ids)) == 10
+    # s0 is kept verbatim at the front, same run ids and questions
+    assert s2.samples[: len(s0.samples)] == s0.samples
+    assert all(s.question and s.why_chosen for s in s2.samples)
+    assert dataset_load_kwargs(s2, "mmlongbench_doc") == {"doc_ids": s2.doc_ids}

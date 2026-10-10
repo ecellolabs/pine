@@ -184,6 +184,10 @@ tools (`src/pine/agent/`); model calls go through a caching, cost-logging `Wrapp
 # the reference experiment: 3 fixed samples defined in sample_sets/s0.json (~$0.01 on OpenRouter)
 OPENROUTER_API_KEY=sk-or-... uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0
 
+# the diversity set: s0 plus 7 more documents (10 samples, 287 pages, all doc types / evidence
+# sources / answer formats; sample_sets/s2.json, ~$0.10 on OpenRouter)
+OPENROUTER_API_KEY=sk-or-... uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s2
+
 # first 2 documents, all their questions          # the whole benchmark (1,091 questions)
 uv run usage/02_agent_qa.py mmlongbench_doc --max-samples 2
 uv run usage/02_agent_qa.py mmlongbench_doc
@@ -196,6 +200,9 @@ uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://se
 - `--max-samples` — **integer N**: the first N documents of the split (as everywhere else);
   **a name such as `s0`**: the exact `(doc_id, question)` list in `sample_sets/s0.json`
   (a `.json` path also works), so anyone can replicate the same experiment; **omitted**: the full dataset.
+  Shipped sets: `s0` (3 reference samples), `s1` (the RAPTOR figure question alone), `s2` (`s0` + 7
+  documents chosen for diversity: every MMLongBench-Doc document type, evidence source and answer
+  format, two image-only decks, two unanswerable questions, 17-76 pages per document).
   Integer selection also accepts `--questions-per-doc K`.
 - `--output-dir` (default `./agent_runs`) — the root for **batch folders**. Every invocation
   creates `<output-dir>/<selection>_<YYYY-MM-DD>[_<n>]/` (`s0_2026-10-08`; a second run of the

@@ -68,7 +68,7 @@ def prepare_dataset(
 
     logger.info("Cached dataset:\n%s", dataset)
 
-    for split, split_iterator in dataset.split_iterators.items():
+    for split_key, split_iterator in dataset.split_iterators.items():
         samples: Any = split_iterator
         logger.info(f"[{split_key.value}] {len(samples)} samples")
         if not visualize_samples or len(samples) == 0:

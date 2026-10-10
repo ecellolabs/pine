@@ -1,0 +1,80 @@
+{
+  "name": "s2",
+  "dataset": "mmlongbench_doc",
+  "description": "Ten MMLongBench-Doc samples: the three s0 samples (kept verbatim, same run ids) plus seven chosen for diversity. Covers all seven document types (research report, academic paper, guidebook, tutorial/workshop deck, financial report, brochure, administration file), every evidence source (pure text, layout text, table, chart, figure, cross-modal figure+text), two image-only documents that need OCR, every answer format (Str, Int, Float, List, None), single-page and multi-page evidence, two unanswerable questions (figure-side and text-side), and document lengths from 17 to 76 pages (287 pages in total). Each sample is one (doc_id, verbatim question) pair; run ids are stable so results are comparable with s0.",
+  "created": "2026-10-10",
+  "author": "Muhammad Talal Majeed",
+  "extends": "s0",
+  "samples": [
+    {
+      "run_id": "run1_isro_text",
+      "doc_id": "fdac8d1e9ef56519371df7e6532df27d.pdf",
+      "question": "What is NARL stand for in this document?",
+      "why_chosen": "Born-digital text report (20 pages). Single-page pure-text evidence. Tests parser text extraction, index navigation and grounding on the easiest case.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "run2_raptor_figure_unanswerable",
+      "doc_id": "2401.18059v1.pdf",
+      "question": "In Figure 1's demonstration, what are the color of the nodes that appear in all three clusters?",
+      "why_chosen": "Academic paper (23 pages). Requires inspecting Figure 1 as an image; the correct output is abstention (Not answerable). Tests the image tool and the verifier's abstention.",
+      "n_pages": 23
+    },
+    {
+      "run_id": "run3_appota_scanned_chart",
+      "doc_id": "reportq32015-151009093138-lva1-app6891_95.pdf",
+      "question": "Regarding the global iOS breakdown, what percentage of the pie chart was iOS 9?",
+      "why_chosen": "Slide deck with NO text layer (34 pages, image-only). Parser must OCR; index must locate the iOS breakdown slide; answer sits in a pie chart. Tests OCR, index and chart reading.",
+      "n_pages": 34
+    },
+    {
+      "run_id": "run4_itc_financial_table",
+      "doc_id": "f86d073b0d735ac873a65d906ba82758.pdf",
+      "question": "What percentage of the shareholder was held by foreign companies and institutional investors as of March 31, 2007?",
+      "why_chosen": "Financial report (ITC Hotels annual report, 20 pages, born-digital text). Evidence is one shareholding TABLE on page 9; answer is a percentage (Float). Tests Docling table extraction, column lookup and numeric normalisation. The dataset asks the same question for 2017, which is unanswerable.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "run5_nus_brochure_list",
+      "doc_id": "welcome-to-nus.pdf",
+      "question": "How many Halls of Residence,  Residential colleges,  and student residences are there in NUS respectively? Please write the answer in list with ascending order, e.g., [\"1\",\"2\"]",
+      "why_chosen": "Brochure (designed layout, 24 pages, 8 MB of graphics). Three counts spread over two pages (17-18) in layout-style text; answer is a List with a prescribed order. Tests multi-page aggregation, layout text and List formatting.",
+      "n_pages": 24
+    },
+    {
+      "run_id": "run6_ntu_guide_layout_long",
+      "doc_id": "Guide-for-international-students-web.pdf",
+      "question": "How much time does it take from clifton campus to the city centre by bus? Your answer should be formatted as 'xx mins'.",
+      "why_chosen": "Guidebook, the longest document in the set (76 pages, heavy layout). One fact in a transport box near the end (page 61) with a mandated 'xx mins' format. Tests index navigation at scale, layout text and format compliance.",
+      "n_pages": 76
+    },
+    {
+      "run_id": "run7_admin_text_unanswerable",
+      "doc_id": "e79deb02a0c0e87511080836c5d4347b.pdf",
+      "question": "Who produced the document that was revised on May 2018?",
+      "why_chosen": "Administration/Industry file (17 pages, born-digital text). A plausible-sounding text question (document producer, May 2018 revision) with no supporting evidence; gold is 'Not answerable'. Tests text-side abstention, complementing the figure-side abstention of run2.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "run8_pew_chart_textlayer",
+      "doc_id": "PG_2020.03.09_US-Germany_FINAL.pdf",
+      "question": "What's the percentage value of west Germany respondents viewing Germany's relationship with the United States is as important as its relationship with Russia?",
+      "why_chosen": "Research report (Pew, born-digital, 21 pages). Evidence is a bar CHART on page 15 whose labels are in the text layer; answer is a percentage (Float). Tests chart reading when Docling may capture the numbers as text, versus image inspection.",
+      "n_pages": 21
+    },
+    {
+      "run_id": "run9_paper_figure1_answerable",
+      "doc_id": "2305.13186v3.pdf",
+      "question": "How many reasoning steps are involved in the figure 1 in the paper? ",
+      "why_chosen": "Academic paper (27 pages). Explicit 'figure 1' reference whose answer (a count, Int) IS in the figure on page 2, with supporting text. Counterpart of run2: the locator must resolve the caption and the vision model must count correctly instead of abstaining.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "run10_slides_table_figure_multihop",
+      "doc_id": "measuringsuccessonfacebooktwitterlinkedin-160317142140_95.pdf",
+      "question": "In 2013, what is the total percentage of online adult users in the \"White, Non-Hispanic\" and \"Hispanic\" categories on the platform whose metrics include Followers, Tweet Clicks, Video Views, Tweet Reach, Engagement Rate, Completion Rate, Engagement: Mentions, Retweets, Likes, Top Tweet, Top Mention, Top Follower, Top Media Tweet, and Twitter Referral Traffic?",
+      "why_chosen": "Tutorial/Workshop slide deck with NO text layer (25 pages, image-only like run3). Multi-hop: identify the platform from its metrics list (page 18, figure) then add two percentages from a table (page 15); answer is an Int. Tests OCR, cross-page reasoning over Table+Figure evidence and arithmetic.",
+      "n_pages": 25
+    }
+  ]
+}

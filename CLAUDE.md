@@ -66,6 +66,10 @@ execution order and prints `run.log`, whose lines carry `module.py:function`.
 `--max-samples` decides the scope: omitted = the **full** dataset; integer `N` =
 the first N documents (add `--questions-per-doc K` to limit questions per
 document); a name such as `s0` = exactly the samples in `sample_sets/s0.json`.
+Shipped sets: `s0` (3 reference samples, ~$0.01), `s1` (RAPTOR figure question only),
+`s2` (`s0` + 7 documents picked for diversity: all 7 document types, every evidence source
+and answer format, two image-only decks, two unanswerable questions, 17-76 pages per
+document, 287 pages in total, ~$0.10 per batch).
 To define a new replicable set, copy `sample_sets/s0.json`, change `name`, list
 the exact `doc_id` (PDF file name) and verbatim `question` text, then use
 `--max-samples <name>`. The visual page is for inspection of a few runs; for a
