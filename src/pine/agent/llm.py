@@ -108,38 +108,64 @@ def _user_content(part: UserPromptPart) -> Any:
             out.append(str(item)[:200])
     return out
 
+def _tool_to_schema(tool: Any) -> dict[str, Any]:
+    """Extract full JSON schema for a tool definition."""
+    if isinstance(tool, dict):
+        return tool
+    name = getattr(tool, "name", str(tool))
+    description = getattr(tool, "description", "") or ""
+    schema: dict[str, Any] = {
+        "name": name,
+        "description": description,
+    }
+    if hasattr(tool, "parameters_json_schema") and tool.parameters_json_schema:
+        schema["parameters"] = tool.parameters_json_schema
+    elif hasattr(tool, "outer_typed_dict_key") and getattr(tool, "outer_typed_dict_key"):
+        schema["outer_typed_dict_key"] = getattr(tool, "outer_typed_dict_key")
+    return schema
+
 
 def messages_to_chat(messages: list[ModelMessage]) -> list[dict[str, Any]]:
     """Flatten Pydantic AI messages into the role/content shape used by the
     visual-samples page and the logs."""
     chat: list[dict[str, Any]] = []
+    system_contents: list[str] = []
+
     for message in messages:
         if isinstance(message, ModelRequest):
-            if message.instructions:
-                chat.append({"role": "system", "content": message.instructions})
+            if message.instructions and message.instructions not in system_contents:
+                system_contents.append(message.instructions)
             for part in message.parts:
                 if isinstance(part, SystemPromptPart):
-                    chat.append({"role": "system", "content": part.content})
+                    if part.content and part.content not in system_contents:
+                        system_contents.append(part.content)
                 elif isinstance(part, UserPromptPart):
                     chat.append({"role": "user", "content": _user_content(part)})
                 elif isinstance(part, ToolReturnPart):
-                    chat.append(
-                        {
-                            "role": "tool",
-                            "name": part.tool_name,
-                            "content": part.model_response_str(),
-                        }
-                    )
+                    tool_msg: dict[str, Any] = {
+                        "role": "tool",
+                        "name": part.tool_name,
+                        "content": part.model_response_str(),
+                    }
+                    if getattr(part, "tool_call_id", None):
+                        tool_msg["tool_call_id"] = part.tool_call_id
+                    chat.append(tool_msg)
                 elif isinstance(part, RetryPromptPart):
-                    chat.append(
-                        {
-                            "role": "retry",
-                            "name": part.tool_name,
-                            "content": part.model_response(),
-                        }
-                    )
+                    retry_msg: dict[str, Any] = {
+                        "role": "retry",
+                        "name": part.tool_name,
+                        "content": part.model_response(),
+                    }
+                    if getattr(part, "tool_call_id", None):
+                        retry_msg["tool_call_id"] = part.tool_call_id
+                    chat.append(retry_msg)
         elif isinstance(message, ModelResponse):
             chat.append(response_to_chat(message))
+
+    if system_contents:
+        combined_system = "\n\n".join(system_contents)
+        chat.insert(0, {"role": "system", "content": combined_system})
+
     return chat
 
 
@@ -250,6 +276,10 @@ class TracedModel(WrapperModel):
         latency = time.perf_counter() - t0
         usage = response_usage(response) if response else {}
         self.ledger.add(usage, latency, from_cache)
+        all_tools = (
+            list(model_request_parameters.function_tools)
+            + list(model_request_parameters.output_tools)
+        )
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "step": self.step_name,
@@ -262,8 +292,8 @@ class TracedModel(WrapperModel):
             "error": error,
             "request": {
                 "messages": messages_to_chat(messages),
-                "tools": [t.name for t in model_request_parameters.function_tools]
-                + [t.name for t in model_request_parameters.output_tools],
+                "tools": [t.name for t in all_tools],
+                "tool_schemas": [_tool_to_schema(t) for t in all_tools],
                 "output_mode": model_request_parameters.output_mode,
                 "settings": dict(model_settings) if model_settings else None,
             },

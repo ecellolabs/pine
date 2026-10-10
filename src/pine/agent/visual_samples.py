@@ -353,7 +353,7 @@ function msgBlock(m){
 function callBlock(c, open=false){
   const req=c.request||{}, resp=c.response_message||{}, u=c.usage||{};
   const respTxt=(resp.content||'')+(resp.tool_calls?(resp.content?'\n':'')+resp.tool_calls.map(t=>`→ ${t.function.name}(${t.function.arguments})`).join('\n'):'')+(c.error?'\nERROR: '+c.error:'');
-  const head=`#${c._n} <b>${esc(c.purpose||'(no purpose)')}</b> · ${esc(c.model)} · ${u.prompt_tokens??'?'}→${u.completion_tokens??'?'} tok · ${fmt$(u.cost)} · ${c.latency_s}s ${c.from_cache?badge('cache','neutral'):''} ${c.error?badge('error','bad'):'· '+esc(c.finish_reason||'')}${req.tools&&req.tools.length?` · tools: <code>${esc(req.tools.join(', '))}</code>`:''}`;
+  const head=`#${c._n} <b>${esc(c.purpose||'(no purpose)')}</b> · ${esc(c.model)} · ${u.prompt_tokens??'?'}→${u.completion_tokens??'?'} tok · ${fmt$(u.cost)} · ${c.latency_s}s ${c.from_cache?badge('cache','neutral'):''} ${c.error?badge('error','bad'):'· '+esc(c.finish_reason||'')}${req.tools&&req.tools.length?` · tools: <code>${esc(req.tools.map(t=>typeof t==='string'?t:(t.name||t.function?.name||JSON.stringify(t))).join(', '))}</code>`:''}`;
   return inner(head, (req.messages||[]).map(msgBlock).join('')+`<div class="msg response"><div class="role">RESPONSE</div><pre>${esc(respTxt||'(empty)')}</pre></div>`, open, 'call');
 }
 function callList(r, step, round, openFirst=true){
