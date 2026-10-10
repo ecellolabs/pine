@@ -25,7 +25,13 @@ from pydantic_ai import Agent
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 
-from pine.agent.common import AgentSettings, CostLedger, setup_logger, write_json
+from pine.agent.common import (
+    AgentSettings,
+    CostLedger,
+    read_json,
+    setup_logger,
+    write_json,
+)
 from pine.agent.llm import traced_model
 from pine.agent.schemas import Verdict
 
@@ -206,6 +212,47 @@ def run_verifier(
             "gaps": ["verifier could not run"],
             "_error": str(exc),
         }
+
+    # Enforce backstop for abstentions (Fix 1: zero tool calls; Fix 2: missing figure image inspection)
+    plan_file = step_dir.parent / "03_planner" / f"plan_round{round_no}.json"
+    plan = read_json(plan_file) if plan_file.exists() else {}
+    if final.get("status") == "not_answerable":
+        if final.get("tool_calls_used", 0) == 0:
+            anchors = plan.get("anchor_pages", [])
+            gap_msg = (
+                f"open anchor pages {', '.join(str(p) for p in anchors)}"
+                if anchors
+                else "read document pages"
+            )
+            llm_verdict["verdict"] = "insufficient"
+            llm_verdict["explanation"] = (
+                "Abstention rejected: navigator made 0 tool calls and did not inspect any pages."
+            )
+            llm_verdict["gaps"] = [gap_msg]
+        else:
+            needs_vis = plan.get("needs_visual_inspection", False)
+            loc_refs = plan.get("locator", {}).get("refs", [])
+            fig_pages = sorted(
+                set(
+                    [p for r in loc_refs for p in r.get("pages", [])]
+                    + (plan.get("anchor_pages", []) if needs_vis else [])
+                )
+            )
+            if needs_vis and fig_pages:
+                inspected_pages = {
+                    i["page"] for i in final.get("image_inspections", [])
+                }
+                uninspected = [p for p in fig_pages if p not in inspected_pages]
+                if uninspected:
+                    llm_verdict["verdict"] = "insufficient"
+                    llm_verdict["explanation"] = (
+                        f"Abstention rejected: figure question requires visual inspection of page(s) "
+                        f"{', '.join(str(p) for p in uninspected)}."
+                    )
+                    llm_verdict["gaps"] = [
+                        f"inspect_page_image on page {p} for visual evidence"
+                        for p in uninspected
+                    ]
 
     # ---- 3. decision
     any_quote_ok = any(q["source"] for q in quote_checks)

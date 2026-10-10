@@ -95,6 +95,13 @@ class FinalAnswer(BaseModel):
     evidence_pages: list[int] = Field(
         default_factory=list, description="1-indexed pages"
     )
+    quote: str = Field(
+        default="",
+        description="Verbatim exact quotation copied from the page text or image inspection output supporting the answer",
+    )
+    quote_page: int | None = Field(
+        default=None, description="Page number (1-indexed) supporting the quote"
+    )
     reasoning: str = ""
 
 

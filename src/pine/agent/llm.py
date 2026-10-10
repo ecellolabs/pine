@@ -108,6 +108,7 @@ def _user_content(part: UserPromptPart) -> Any:
             out.append(str(item)[:200])
     return out
 
+
 def _tool_to_schema(tool: Any) -> dict[str, Any]:
     """Extract full JSON schema for a tool definition."""
     if isinstance(tool, dict):
@@ -120,8 +121,8 @@ def _tool_to_schema(tool: Any) -> dict[str, Any]:
     }
     if hasattr(tool, "parameters_json_schema") and tool.parameters_json_schema:
         schema["parameters"] = tool.parameters_json_schema
-    elif hasattr(tool, "outer_typed_dict_key") and getattr(tool, "outer_typed_dict_key"):
-        schema["outer_typed_dict_key"] = getattr(tool, "outer_typed_dict_key")
+    elif hasattr(tool, "outer_typed_dict_key") and tool.outer_typed_dict_key:
+        schema["outer_typed_dict_key"] = tool.outer_typed_dict_key
     return schema
 
 
@@ -276,9 +277,8 @@ class TracedModel(WrapperModel):
         latency = time.perf_counter() - t0
         usage = response_usage(response) if response else {}
         self.ledger.add(usage, latency, from_cache)
-        all_tools = (
-            list(model_request_parameters.function_tools)
-            + list(model_request_parameters.output_tools)
+        all_tools = list(model_request_parameters.function_tools) + list(
+            model_request_parameters.output_tools
         )
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),

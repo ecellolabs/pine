@@ -75,10 +75,9 @@ Plan from the planner (candidate_sections and anchor_pages were resolved from th
 {plan}
 
 Procedure:
-1. Open the plan's anchor_pages FIRST: read_page for text, inspect_page_image when the evidence is a figure/chart/table image. Then use search_pages / read_page with the planner's queries and candidate sections to locate further pages.
-2. If the evidence is in a chart, figure, table image, or the page text is empty, call inspect_page_image with a precise question.
-3. Before finishing, call record_evidence with the page and an EXACT quotation (copied verbatim from the page text or the image inspection output) that supports the answer. The tool rejects quotations that are not on the page.
-4. Call final_answer. Keep the answer concise (just the value / name / list). If, after reading the planner's candidate sections and searching, the information is genuinely absent or the question asks about something the document does not contain, use status "not_answerable".
+1. Open the plan's anchor_pages FIRST in your first turn: call read_page (you can pass multiple pages at once like read_page([1, 2])) for text, inspect_page_image when the evidence is a figure/chart/table image.
+2. If evidence is not in anchor pages, use search_pages / read_page to locate further candidate pages.
+3. Call final_answer with status, concise answer, evidence_pages, and quote (copied verbatim from page text or image inspection output). Providing quote and quote_page in final_answer automatically records evidence in a single turn.
 Budget: at most {budget} tool calls. Never repeat a tool call with identical arguments. Always respond by calling a tool."""
 
 VISION_INSTRUCTIONS = (
@@ -118,6 +117,7 @@ class NavDeps:
     pages_read: list[int] = field(default_factory=list)
     anomalies: list[dict[str, Any]] = field(default_factory=list)
     seen_calls: Counter[str] = field(default_factory=Counter)
+    plan: dict[str, Any] = field(default_factory=dict)
 
     @property
     def n_pages(self) -> int:
@@ -204,12 +204,75 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
     @agent.output_validator
     def effort_gate(ctx: RunContext[NavDeps], out: FinalAnswer) -> FinalAnswer:
         """An *answered* final needs recorded evidence. Abstentions are never
-        bounced: there is deliberately no minimum-page rule."""
+        bounced without cause, but must follow 'look before you abstain': zero-call
+        abstentions and uninspected figure abstentions are bounced so the agent
+        actually inspects candidate pages."""
         deps = ctx.deps
+        if out.status == "not_answerable":
+            if deps.calls == 0:
+                anchors = deps.plan.get("anchor_pages", [])
+                anchor_msg = (
+                    f" (such as page(s) {', '.join(str(p) for p in anchors)})"
+                    if anchors
+                    else ""
+                )
+                raise ModelRetry(
+                    f"You cannot abstain without inspecting any pages first. Call read_page or "
+                    f"inspect_page_image on candidate pages{anchor_msg} before calling final_answer."
+                )
+            needs_vis = deps.plan.get("needs_visual_inspection", False)
+            loc_refs = deps.plan.get("locator", {}).get("refs", [])
+            fig_pages = sorted(
+                set(
+                    [p for r in loc_refs for p in r.get("pages", [])]
+                    + (deps.plan.get("anchor_pages", []) if needs_vis else [])
+                )
+            )
+            if needs_vis and fig_pages:
+                inspected_pages = {i["page"] for i in deps.image_inspections}
+                uninspected = [p for p in fig_pages if p not in inspected_pages]
+                if uninspected:
+                    raise ModelRetry(
+                        f"This question requires visual inspection of figures/tables on page(s) "
+                        f"{', '.join(str(p) for p in uninspected)}. Call inspect_page_image on "
+                        f"these page(s) before calling final_answer."
+                    )
+
         if out.status == "answered" and not deps.ledger:
+            if out.quote:
+                qp = out.quote_page or (
+                    out.evidence_pages[0] if out.evidence_pages else None
+                )
+                if qp is not None:
+                    p = _page_ok(deps, qp)
+                    page_text = deps.pages_md.get(p, "")
+                    in_text = quote_in_text(out.quote, page_text)
+                    in_img = any(
+                        i["page"] == p and quote_in_text(out.quote, i["result"])
+                        for i in deps.image_inspections
+                    )
+                    if in_text or in_img:
+                        entry = {
+                            "page": p,
+                            "quote": out.quote,
+                            "candidate_answer": out.answer,
+                            "note": out.reasoning
+                            or "Inline evidence from final_answer",
+                            "round": deps.round_no,
+                            "source": "page_text" if in_text else "image_inspection",
+                        }
+                        deps.ledger.append(entry)
+                        deps.log.info(
+                            "effort_gate: auto-recorded inline evidence for page %d", p
+                        )
+                        return out
+                    raise ModelRetry(
+                        f"The quote is not found verbatim on page {p}. Copy the exact text "
+                        "from read_page or inspect_page_image output."
+                    )
             raise ModelRetry(
-                "Call record_evidence with the page and an exact quotation that "
-                "supports the answer before calling final_answer."
+                "Call record_evidence with the page and an exact quotation (or provide "
+                "quote and quote_page directly in final_answer) before calling final_answer."
             )
         return out
 
@@ -262,27 +325,32 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
         return deps.record("search_pages", {"query": query}, result)
 
     @agent.tool
-    def read_page(ctx: RunContext[NavDeps], page: int) -> str:
-        """Return the full Markdown text of one page (1-indexed).
+    def read_page(ctx: RunContext[NavDeps], page: int | list[int]) -> str:
+        """Return the full Markdown text of one page or multiple pages (1-indexed).
 
         Args:
-            page: Page number, 1-indexed.
+            page: Page number or list of page numbers (e.g. 2 or [2, 3]).
         """
         deps = ctx.deps
-        p = _page_ok(deps, page)
-        deps.pages_read.append(p)
-        md = deps.pages_md[p].strip()
-        head = f"[page {p}] title: {deps.index['pages'][str(p)]['title']}\n"
-        if len(md) < 40:
-            result = head + (
-                "(This page has no machine-readable text. "
-                "Use inspect_page_image to look at it.)"
-            )
-        else:
-            if len(md) > READ_PAGE_MAX_CHARS:
-                md = md[:READ_PAGE_MAX_CHARS] + "\n...[truncated]"
-            result = head + md
-        return deps.record("read_page", {"page": p}, result)
+        pages = page if isinstance(page, list) else [page]
+        out_blocks: list[str] = []
+        for p_raw in pages:
+            p = _page_ok(deps, p_raw)
+            deps.pages_read.append(p)
+            md = deps.pages_md[p].strip()
+            head = f"[page {p}] title: {deps.index['pages'][str(p)]['title']}\n"
+            if len(md) < 40:
+                res = head + (
+                    "(This page has no machine-readable text. "
+                    "Use inspect_page_image to look at it.)"
+                )
+            else:
+                if len(md) > READ_PAGE_MAX_CHARS:
+                    md = md[:READ_PAGE_MAX_CHARS] + "\n...[truncated]"
+                res = head + md
+            out_blocks.append(res)
+        result = "\n\n---\n\n".join(out_blocks)
+        return deps.record("read_page", {"page": page}, result)
 
     @agent.tool
     async def inspect_page_image(
@@ -513,6 +581,50 @@ async def _forced_final(
         )
 
 
+def _format_plan_as_markup(plan: dict[str, Any]) -> str:
+    """Format the plan dictionary as clean Markdown markup instead of raw JSON."""
+    lines: list[str] = []
+    if "question_type" in plan or "expected_answer_format" in plan:
+        qt = plan.get("question_type", "unspecified")
+        fmt = plan.get("expected_answer_format", "unspecified")
+        lines.append(f"- **Question Type**: {qt} (Expected Format: {fmt})")
+    if "needs_visual_inspection" in plan:
+        vis = plan.get("needs_visual_inspection")
+        lines.append(f"- **Needs Visual Inspection**: {vis}")
+    if plan.get("sub_goals"):
+        lines.append("- **Sub-goals**:")
+        for sg in plan["sub_goals"]:
+            lines.append(f"  - {sg}")
+    if plan.get("search_queries"):
+        queries = ", ".join(f"`{q}`" for q in plan["search_queries"])
+        lines.append(f"- **Search Queries**: {queries}")
+    if plan.get("candidate_sections"):
+        sections = ", ".join(str(s) for s in plan["candidate_sections"])
+        lines.append(f"- **Candidate Sections**: {sections}")
+    if plan.get("anchor_pages"):
+        pages = ", ".join(str(p) for p in plan["anchor_pages"])
+        lines.append(f"- **Anchor Pages**: {pages}")
+
+    known_keys = {
+        "question_type",
+        "expected_answer_format",
+        "needs_visual_inspection",
+        "sub_goals",
+        "search_queries",
+        "candidate_sections",
+        "anchor_pages",
+    }
+    for k, v in plan.items():
+        if k not in known_keys and not k.startswith("_"):
+            title = k.replace("_", " ").title()
+            if isinstance(v, list):
+                lines.append(f"- **{title}**: {', '.join(str(x) for x in v)}")
+            else:
+                lines.append(f"- **{title}**: {v}")
+
+    return "\n".join(lines)
+
+
 def run_orchestrator(
     settings: AgentSettings,
     question: str,
@@ -573,6 +685,7 @@ def run_orchestrator(
         log=log,
         vision_model=vision_model,
         trace_path=trace_path,
+        plan=plan,
     )
 
     plan_view = {
@@ -584,7 +697,7 @@ def run_orchestrator(
         doc_title=index["doc_title"],
         n_pages=index["n_pages"],
         outline=enriched_outline(index),
-        plan=json.dumps(plan_view, indent=1),
+        plan=_format_plan_as_markup(plan_view),
         budget=max_tool_calls,
     )
     user = f"Question: {question}"

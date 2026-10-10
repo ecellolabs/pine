@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
