@@ -28,7 +28,7 @@ ever contains the key.
 | `src/pine/parsers/docling.py` | remote Docling API transform (cluster) |
 | `src/pine/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
 | `src/pine/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
-| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `planner`, `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `runner`, `visual_samples` (HTML page) |
+| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `runner`, `visual_samples` (HTML page) |
 | `usage/0N_*.py` | stateless CLI stages (00 dataset, 01 Docling preprocess, 02 agent, 03 visual page; `B0_evaluation.py` is the single-pass VLM baseline, not a stage); `02_agent_qa.py` runs the agent (full dataset or a selection), `03_visual_samples.py` builds the visual-samples page |
 | `sample_sets/*.json` | named, exact lists of (doc_id, question) so an experiment is replicable |
 | `tests/` | pytest; `ci/` the check scripts |
@@ -99,7 +99,13 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
   The navigator's output tool is `final_answer`; its only gate (an `@agent.output_validator`)
   is that an *answered* final needs a ledger entry. Abstentions are never bounced: there is no
   minimum-page rule. The planner is a search strategy (queries, sections, visual or not); it has
-  no abstain field.
+  no abstain field. Candidate regions are **not inferred from section titles**: the planner's
+  `locate_regions` tool (`agent/locate.py`, `RegionLocator`) resolves "Figure N"/"Table N" to the
+  page whose Docling caption carries it and ranks pages/sections with BM25 for free-text queries;
+  `run_planner` then re-runs the locator in code and merges it (reference sections and pages
+  first) so `candidate_sections` / `anchor_pages` are right even if the 7B model skipped the tool.
+  The navigator's prompt shows the same figure-aware outline and opens `anchor_pages` first.
+  Locator output is written to `03_planner/locate_round{N}.json` and shown on the visual page.
   Validation failures are retried by Pydantic AI (`retries=`); structural checks live in
   `@agent.output_validator` functions that raise `ModelRetry` (see the hierarchy validator).
 - Tools are `@agent.tool` functions taking `RunContext[NavDeps]`; the docstring is the tool

@@ -127,6 +127,10 @@ def collect(d: Path) -> dict[str, Any]:
         else ""
     )
     plans = [rj(f) for f in sorted((d / "03_planner").glob("plan_round*.json"))]
+    locates = {
+        int(f.stem.replace("locate_round", "")): rj(f)
+        for f in sorted((d / "03_planner").glob("locate_round*.json"))
+    }
     traces = {
         f.stem: jsonl(f)
         for f in sorted((d / "04_orchestrator").glob("trace_round*.jsonl"))
@@ -189,6 +193,7 @@ def collect(d: Path) -> dict[str, Any]:
         "index": index,
         "outline": outline,
         "plans": plans,
+        "locates": locates,
         "traces": traces,
         "anomalies": anomalies,
         "finals": finals,
@@ -436,7 +441,8 @@ function renderRun(r, i){
 
     // planner
     const planHtml = p ? `${module('input → Qwen','Prompt sent to the planner',`${callsFor(r,'03_planner',N).length} call(s)`, callList(r,'03_planner',N))}
-      <div class="sum"><div><b>Question type</b><span>${esc(p.question_type)}</span></div><div><b>Expected format</b><span>${esc(p.expected_answer_format)}</span></div><div><b>Needs visual</b><span>${esc(p.needs_visual_inspection)}</span></div><div><b>Candidate sections</b><span>${esc((p.candidate_sections||[]).join(', '))}</span></div></div>
+      <div class="sum"><div><b>Question type</b><span>${esc(p.question_type)}</span></div><div><b>Expected format</b><span>${esc(p.expected_answer_format)}</span></div><div><b>Needs visual</b><span>${esc(p.needs_visual_inspection)}</span></div><div><b>Candidate sections</b><span>${esc((p.candidate_sections||[]).join(', '))}</span></div><div><b>Anchor pages</b><span>${esc((p.anchor_pages||[]).join(', ')||'-')}</span></div><div><b>Locator tool</b><span>${p.locator?(p.locator.tool_called?badge('called by model','ok'):badge('not called (merged in code)','warn')):'-'}</span></div></div>
+      ${p.locator?inner('Locator — deterministic region resolution (figure/table captions + BM25)', `<div><b>Resolved references:</b> ${(p.locator.refs||[]).map(x=>`${esc(x.ref)} → pages ${esc(JSON.stringify(x.pages))} (${esc(x.via)})`).join('; ')||'none'}</div><div><b>Reference sections:</b> ${esc((p.locator.ref_sections||[]).join(', ')||'none')} · <b>lexical sections:</b> ${esc((p.locator.ranked_sections||[]).map(x=>x.id+' ('+x.score+')').join(', '))} · <b>top pages:</b> ${esc((p.locator.ranked_pages||[]).map(x=>'p'+x.page+' ('+x.score+')').join(', '))}</div>${r.locates[N]?`<pre>${esc((r.locates[N].final||{}).explanation||'')}</pre>${inner('locate_round'+N+'.json',`<pre>${pj(r.locates[N])}</pre>`)}`:''}`):''}
       <b>Sub-goals</b><ol>${(p.sub_goals||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol><b>Search queries</b> <span>${(p.search_queries||[]).map(s=>`<code>${esc(s)}</code>`).join(' ')}</span>${p.gaps_in&&p.gaps_in.length?`<div><b>Gaps from verifier (round ${N-1}):</b> ${esc(p.gaps_in.join('; '))}</div>`:''}${p._error?badge('PLANNER ERROR: '+p._error,'bad'):''}
       ${inner('plan JSON',`<pre>${pj(p)}</pre>`)}` : '<div class="small">no plan for this round</div>';
 

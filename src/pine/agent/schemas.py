@@ -68,7 +68,17 @@ class Plan(BaseModel):
     )
     candidate_sections: list[str] = Field(
         default_factory=list,
-        description="Section ids from the outline most likely to contain the evidence",
+        description=(
+            "Section ids most likely to contain the evidence, best first: take them "
+            "from the locate_regions tool result"
+        ),
+    )
+    anchor_pages: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Pages (1-indexed) the navigator should open first, from the locate_regions "
+            "tool result (e.g. the page carrying the referenced figure's caption)"
+        ),
     )
 
 

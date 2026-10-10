@@ -601,3 +601,151 @@ def test_batch_dir_naming(tmp_path: Path) -> None:
         "s0_2026-10-08_3",
     ]
     assert first.is_dir() and third.is_dir()
+
+
+#  locator (planner candidate regions)
+def _raptor_like_index() -> dict[str, Any]:
+    pages = {
+        "1": {
+            "title": "Introduction",
+            "summary": "RAPTOR clusters chunks of text.",
+            "keywords": ["raptor", "clusters"],
+            "figures": [],
+            "tables": [],
+            "mentions_figures": [1],
+            "mentions_tables": [],
+        },
+        "2": {
+            "title": "Tree construction",
+            "summary": "How the tree is built.",
+            "keywords": ["tree"],
+            "figures": [
+                "Figure 1: Tree construction process: RAPTOR recursively clusters chunks of text"
+            ],
+            "tables": [],
+            "mentions_figures": [],
+            "mentions_tables": [],
+        },
+        "3": {
+            "title": "Related work",
+            "summary": "Prior retrieval systems.",
+            "keywords": ["retrieval"],
+            "figures": [],
+            "tables": [],
+            "mentions_figures": [],
+            "mentions_tables": [],
+        },
+        "4": {
+            "title": "Text clustering and summarization",
+            "summary": "Clustering with GMMs; nodes and clusters.",
+            "keywords": ["clustering", "nodes", "clusters"],
+            "figures": ["Figure 2: Clustering"],
+            "tables": [],
+            "mentions_figures": [2],
+            "mentions_tables": [],
+        },
+        "5": {
+            "title": "Retrieval mechanisms",
+            "summary": "Tree traversal and collapsed tree.",
+            "keywords": ["retrieval"],
+            "figures": [],
+            "tables": ["Table 1: NarrativeQA results"],
+            "mentions_figures": [],
+            "mentions_tables": [1, 5],
+        },
+    }
+    return {
+        "doc_title": "RAPTOR",
+        "n_pages": 5,
+        "sections": [
+            {
+                "id": "S1",
+                "title": "Introduction and Overview",
+                "start_page": 1,
+                "end_page": 3,
+                "subsections": [],
+            },
+            {
+                "id": "S2",
+                "title": "Text Clustering and Summarization",
+                "start_page": 4,
+                "end_page": 4,
+                "subsections": [],
+            },
+            {
+                "id": "S3",
+                "title": "Retrieval Mechanisms",
+                "start_page": 5,
+                "end_page": 5,
+                "subsections": [],
+            },
+        ],
+        "pages": pages,
+    }
+
+
+def test_locator_resolves_figure_reference_to_caption_page() -> None:
+    from pine.agent.locate import RegionLocator, enriched_outline
+
+    loc = RegionLocator(
+        _raptor_like_index(),
+        {
+            1: "As shown in Figure 1, RAPTOR clusters",
+            2: "Figure 1: Tree construction process",
+        },
+    )
+    q = "In Figure 1's demonstration, what are the color of the nodes that appear in all three clusters?"
+    refs = loc.resolve_refs(q)
+    assert [(r.ref, r.pages, r.via) for r in refs] == [("Figure 1", [2], "caption")]
+    out = loc.locate(q, ["Figure 1", "clusters", "node colors"])
+    assert (
+        out["sections"][0] == "S1"
+    )  # the caption page's section, not the title match (S2)
+    assert out["anchor_pages"][0] == 2
+    assert "Figure 1 is on page(s) [2]" in out["explanation"]
+    # mention fallback when no caption carries the number, and 'not found' otherwise
+    assert [(r.pages, r.via) for r in loc.resolve_refs("Table 5")] == [([5], "mention")]
+    assert loc.resolve_refs("Fig. 9")[0].via == "none"
+    # free-text ranking still works and the outline shows captions per section
+    assert loc.rank_sections("clustering GMM nodes")[0][0] == "S2"
+    assert (
+        "[S1] Introduction and Overview (pages 1-3) | Figure 1 (p2)"
+        in enriched_outline(_raptor_like_index())
+    )
+    assert "Table 1 (p5)" in enriched_outline(_raptor_like_index())
+
+
+def test_planner_merges_locator_even_when_model_skips_tool(tmp_path: Path) -> None:
+    from pine.agent.locate import RegionLocator
+    from pine.agent.planner import _merge_locator
+
+    index = _raptor_like_index()
+    loc = RegionLocator(index).locate("What does Figure 1 show?", ["Figure 1"])
+    plan = {
+        "candidate_sections": ["S2", "S3"],
+        "anchor_pages": [],
+        "search_queries": ["Figure 1"],
+    }
+    merged = _merge_locator(plan, loc)
+    assert (
+        merged["candidate_sections"][0] == "S1" and "S2" in merged["candidate_sections"]
+    )
+    assert merged["anchor_pages"][0] == 2
+    assert merged["locator"]["ref_sections"] == ["S1"]
+
+    # end to end with a stub model that answers without calling the tool
+    settings = _settings(
+        tmp_path, lambda name: FunctionModel(_prompted_stub, model_name=name)
+    )
+    plan2 = run_planner(
+        settings,
+        "What does Figure 1 show?",
+        index,
+        tmp_path / "03_planner",
+        tmp_path / "run.log",
+        CostLedger(tmp_path),
+    )
+    assert plan2["_error"] is None
+    assert plan2["candidate_sections"][0] == "S1" and plan2["anchor_pages"][0] == 2
+    assert plan2["locator"]["tool_called"] is False
+    assert (tmp_path / "03_planner" / "locate_round1.json").exists()

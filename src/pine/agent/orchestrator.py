@@ -24,8 +24,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
-import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +50,8 @@ from pine.agent.common import (
     write_json,
 )
 from pine.agent.llm import TracedModel, response_to_chat, traced_model
+from pine.agent.locate import BM25, build_page_corpus, enriched_outline
+from pine.agent.locate import tokens as _tokens
 from pine.agent.schemas import FinalAnswer
 from pine.agent.verifier import quote_in_text
 
@@ -68,14 +68,14 @@ TOOL_NAMES = [
 
 SYSTEM_PROMPT = """You are the ORCHESTRATOR of a grounded document question-answering agent. You answer ONE question about a long document by navigating a hierarchical index with tools. You never answer from memory; every answer must be supported by a page of THIS document.
 
-Document: "{doc_title}" ({n_pages} pages). Sections (id: title, pages):
+Document: "{doc_title}" ({n_pages} pages). Sections (id, title, pages | figures/tables whose captions are in the section):
 {outline}
 
-Plan from the planner:
+Plan from the planner (candidate_sections and anchor_pages were resolved from the index: a "Figure N" reference points at the page carrying that caption):
 {plan}
 
 Procedure:
-1. Use get_outline / search_pages / read_page to locate candidate pages. Prefer the planner's candidate sections and search queries.
+1. Open the plan's anchor_pages FIRST: read_page for text, inspect_page_image when the evidence is a figure/chart/table image. Then use search_pages / read_page with the planner's queries and candidate sections to locate further pages.
 2. If the evidence is in a chart, figure, table image, or the page text is empty, call inspect_page_image with a precise question.
 3. Before finishing, call record_evidence with the page and an EXACT quotation (copied verbatim from the page text or the image inspection output) that supports the answer. The tool rejects quotations that are not on the page.
 4. Call final_answer. Keep the answer concise (just the value / name / list). If, after reading the planner's candidate sections and searching, the information is genuinely absent or the question asks about something the document does not contain, use status "not_answerable".
@@ -94,59 +94,7 @@ FORCED_FINAL_INSTRUCTIONS = (
 )
 
 
-#  BM25
-_tok = re.compile(r"[a-z0-9]+")
-
-
-def _tokens(s: str) -> list[str]:
-    toks = _tok.findall(s.lower())
-    matches = re.findall(r"\b(figure|fig|table|tab)\s*(\d+)\b", s.lower())
-    for tag, num in matches:
-        clean_num = str(int(num))
-        num_pad = f"{int(num):02d}"
-        if tag in ("figure", "fig"):
-            for nv in (num, clean_num, num_pad):
-                toks.append(f"figure{nv}")
-                toks.append(f"fig{nv}")
-        elif tag in ("table", "tab"):
-            for nv in (num, clean_num, num_pad):
-                toks.append(f"table{nv}")
-                toks.append(f"tab{nv}")
-    return list(dict.fromkeys(toks))
-
-
-class BM25:
-    def __init__(self, docs: dict[int, str], k1: float = 1.5, b: float = 0.75):
-        self.k1, self.b = k1, b
-        self.tf = {p: Counter(_tokens(t)) for p, t in docs.items()}
-        self.len = {p: sum(c.values()) for p, c in self.tf.items()}
-        self.avg = sum(self.len.values()) / max(len(self.len), 1)
-        df: Counter[str] = Counter()
-        for c in self.tf.values():
-            df.update(c.keys())
-        n = len(docs)
-        self.idf = {t: math.log(1 + (n - d + 0.5) / (d + 0.5)) for t, d in df.items()}
-
-    def search(self, query: str, k: int = 5) -> list[tuple[int, float]]:
-        q = _tokens(query)
-        scores: dict[int, float] = {}
-        for p, c in self.tf.items():
-            s = 0.0
-            for t in q:
-                if t in c:
-                    tf = c[t]
-                    s += (
-                        self.idf.get(t, 0)
-                        * tf
-                        * (self.k1 + 1)
-                        / (
-                            tf
-                            + self.k1 * (1 - self.b + self.b * self.len[p] / self.avg)
-                        )
-                    )
-            if s > 0:
-                scores[p] = s
-        return sorted(scores.items(), key=lambda x: -x[1])[:k]
+# BM25 / tokens: see pine.agent.locate (shared with the planner's locator)
 
 
 # deps
@@ -606,18 +554,7 @@ def run_orchestrator(
         p: (parser_dir / "pages" / f"page_{p:03d}.md").read_text(encoding="utf-8")
         for p in range(1, index["n_pages"] + 1)
     }
-    bm25_docs = {}
-    for p, md in pages_md.items():
-        ps = index["pages"][str(p)]
-        figs = " ".join(ps.get("figures") or [])  # true captions only
-        tabs = " ".join(ps.get("tables") or [])
-        kw = " ".join(ps.get("keywords") or [])
-        # Captions (and the title) are repeated so that 'Figure N' queries rank the page
-        # that carries the caption first; in-text mentions are left in the body text
-        # at natural weight (ps['mentions_figures'] is deliberately not boosted).
-        header_boost = f"{ps['title']} " * 3 + f"{figs} {tabs} " * 5
-        bm25_docs[p] = f"{header_boost} {ps['summary']} {kw} {md}"
-
+    bm25_docs = build_page_corpus(index, pages_md)
     bm25 = BM25(bm25_docs)
     outline_path = step_dir.parent / "02_index" / "outline.md"
     outline_md = (
@@ -638,26 +575,15 @@ def run_orchestrator(
         trace_path=trace_path,
     )
 
-    outline_lines: list[str] = []
-
-    def walk(nodes: list[dict[str, Any]], depth: int) -> None:
-        for s in nodes:
-            outline_lines.append(
-                f"{'  ' * depth}{s['id']}: {s['title']} (p{s['start_page']}-{s['end_page']})"
-            )
-            if s.get("subsections"):
-                walk(s["subsections"], depth + 1)
-
-    walk(index["sections"], 0)
     plan_view = {
         k: v
         for k, v in plan.items()
-        if not k.startswith("_") and k not in ("round", "gaps_in")
+        if not k.startswith("_") and k not in ("round", "gaps_in", "locator")
     }
     system = SYSTEM_PROMPT.format(
         doc_title=index["doc_title"],
         n_pages=index["n_pages"],
-        outline="\n".join(outline_lines),
+        outline=enriched_outline(index),
         plan=json.dumps(plan_view, indent=1),
         budget=max_tool_calls,
     )

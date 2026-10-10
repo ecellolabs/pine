@@ -172,7 +172,9 @@ python usage/B0_evaluation.py slidevqa --max-samples 5 --mock
 ### Step 3 — `usage/02_agent_qa.py` (grounded agentic DocQA)
 
 Runs the full online loop of the proposal on MMLongBench-Doc: Docling parser → PageIndex-style
-hierarchical index → planner → tool-calling orchestrator (outline / BM25 search / read page /
+hierarchical index → planner (with a deterministic `locate_regions` tool that resolves "Figure N"/"Table N"
+to the page carrying the caption and ranks pages/sections by BM25, so candidate sections and anchor pages come
+from the index, not from section-title guesses) → tool-calling orchestrator (outline / BM25 search / read page /
 inspect page image / evidence ledger) → verifier (quote-in-page check + grounding verdict +
 abstention) → official MMLongBench-Doc scorer. Every question gets a fully traced folder.
 All agents are [Pydantic AI](https://ai.pydantic.dev) `Agent`s with typed outputs and `@agent.tool`

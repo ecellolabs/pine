@@ -12,6 +12,8 @@ Writes:
   02_index/page_summaries.jsonl   one line per page (title, summary, keywords, source)
   02_index/index.json             the tree (validated) + validation report
   02_index/outline.md             human-readable outline
+  02_index/page_visuals.json      captions + figure/table mentions per page (from Docling;
+                                  merged into index.json["pages"], used by the locator)
   02_index/llm_calls.jsonl        every model request/response for this step
   02_index/index.log
 """

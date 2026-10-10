@@ -242,6 +242,7 @@ def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
     # ---- 03-05 loop
     gaps: list[str] | None = None
     feedback: str | None = None
+    prior: dict[str, Any] | None = None
     final: dict[str, Any] = {}
     verification: dict[str, Any] = {}
     tool_calls_total = 0
@@ -257,6 +258,8 @@ def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
             ledger,
             round_no=round_no,
             gaps=gaps,
+            parser_dir=run_dir / STEP_DIRS[1],
+            prior=prior,
         )
         final = run_orchestrator(
             settings,
@@ -287,6 +290,13 @@ def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
         if verification["decision"] != "REPLAN":
             break
         gaps = verification["gaps"]
+        prior = {
+            "candidate_sections": plan.get("candidate_sections"),
+            "anchor_pages": plan.get("anchor_pages"),
+            "pages_read": final.get("pages_read"),
+            "tool_calls_used": final.get("tool_calls_used"),
+            "status": final.get("status"),
+        }
         feedback = (
             verification["llm_verdict"].get("explanation", "")
             + " Gaps: "
