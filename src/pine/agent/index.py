@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,7 @@ from pine.agent.schemas import Hierarchy, PageSummary
 
 SUMMARY_INSTRUCTIONS = (
     "You are indexing a long document for navigation. Given the Markdown text of "
-    "ONE page, produce a short descriptive title, a 1-2 sentence summary of what "
+    "ONE page, produce a short descriptive title, a 2-3 sentence summary of what "
     "information the page contains (topics, entities, numbers, tables, figures) "
     "and 5-10 keywords. Mention figure and table captions explicitly "
     "(e.g. 'Figure 1: ...') so they can be found later."
@@ -56,8 +57,36 @@ IMAGE_SUMMARY_INSTRUCTIONS = (
     "You are indexing a long document for navigation. This page has no "
     "machine-readable text, so describe it from the image: headings, charts "
     "(type, series, axes, key values), tables, images, numbers. Produce a short "
-    "title, a 2-3 sentence summary and 5-10 keywords."
+    "title, a 2-3 sentence summary and 5-10 keywords.\n"
+    "Respond in JSON format with keys: title, summary, keywords, has_visual_elements."
 )
+
+
+def _parse_image_summary_output(text: str, page_num: int) -> PageSummary:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        data = json.loads(cleaned)
+        return PageSummary(
+            title=str(data.get("title", f"Page {page_num}")),
+            summary=str(data.get("summary", cleaned)),
+            keywords=[str(k) for k in data.get("keywords", [])],
+            has_visual_elements=bool(data.get("has_visual_elements", True)),
+        )
+    except Exception:  # noqa: BLE001
+        first_line = next(
+            (ln.strip("# *") for ln in cleaned.splitlines() if ln.strip()),
+            f"Page {page_num}",
+        )
+        return PageSummary(
+            title=first_line[:120],
+            summary=cleaned[:600],
+            keywords=[],
+            has_visual_elements=True,
+        )
+
 
 HIERARCHY_INSTRUCTIONS = """You are building a table of contents (hierarchical index) for a {n_pages}-page document titled "{doc_title}".
 You will be given one line per page: page number, title, short summary.
@@ -249,9 +278,8 @@ def run_index(
         retries=1,
         model_settings=ModelSettings(temperature=0.0, max_tokens=300),
     )
-    image_summary_agent: Agent[None, PageSummary] = Agent(
+    image_summary_agent: Agent[None, str] = Agent(
         vision_model,
-        output_type=ToolOutput(PageSummary, name="PageSummary"),
         instructions=IMAGE_SUMMARY_INSTRUCTIONS,
         retries=1,
         model_settings=ModelSettings(temperature=0.0, max_tokens=300),
@@ -307,12 +335,13 @@ def run_index(
                 if use_image:
                     vision_model.purpose = f"page_summary_p{p}"
                     jpeg = render_page(pdf_path, p, max_side=768, quality=70)
-                    summary = image_summary_agent.run_sync(
+                    raw_text = image_summary_agent.run_sync(
                         [
                             BinaryContent(data=jpeg, media_type="image/jpeg"),
                             f"Page {p} of {n_pages} of the document.",
                         ]
                     ).output
+                    summary = _parse_image_summary_output(raw_text, p)
                 else:
                     text_model.purpose = f"page_summary_p{p}"
                     prompt_text = PAGE_SUMMARY_PROMPT.format(

@@ -13,6 +13,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
+    TextPart,
     ToolCallPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -275,7 +276,15 @@ def _prompted_stub(messages: list[ModelMessage], info: AgentInfo) -> ModelRespon
             "evidence_pages": [],
             "reasoning": "stub",
         }
-    tool_name = info.output_tools[0].name if info.output_tools else "output"
+    if not info.output_tools:
+        if not name:
+            payload = {
+                "title": "Stub title",
+                "summary": "Stub summary.",
+                "keywords": ["stub"],
+            }
+        return ModelResponse(parts=[TextPart(json.dumps(payload))])
+    tool_name = info.output_tools[0].name
     return ModelResponse(parts=[ToolCallPart(tool_name, payload)])
 
 

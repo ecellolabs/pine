@@ -161,7 +161,9 @@ class DoclingTransform:
             if isinstance(doc_raw, dict):
                 if doc_raw.get("schema_name") == "DoclingDocument":
                     return DoclingDocument.model_validate(doc_raw)
-                if "json_content" in doc_raw and isinstance(doc_raw["json_content"], dict):
+                if "json_content" in doc_raw and isinstance(
+                    doc_raw["json_content"], dict
+                ):
                     return DoclingDocument.model_validate(doc_raw["json_content"])
 
         # Fallback attempt to validate directly as DoclingDocument
