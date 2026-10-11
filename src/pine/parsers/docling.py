@@ -132,19 +132,45 @@ class DoclingTransform:
                 f"Docling API request connection error to {url}: {exc}"
             ) from exc
 
+        raw = response.json()
+        # Case 1: Server directly returns a DoclingDocument
+        if isinstance(raw, dict) and raw.get("schema_name") == "DoclingDocument":
+            try:
+                return DoclingDocument.model_validate(raw)
+            except Exception as exc:
+                raise DoclingApiError(
+                    f"Failed to parse direct DoclingDocument response: {exc}"
+                ) from exc
+
+        # Case 2: Server returns wrapped ConvertDocumentApiResponse
         try:
-            result = ConvertDocumentApiResponse.model_validate(response.json())
+            result = ConvertDocumentApiResponse.model_validate(raw)
+            if result.document.json_content is not None:
+                return result.document.json_content
+            raise DoclingApiError(
+                "Docling API converted successfully but returned no 'json_content' in document."
+            )
+        except DoclingApiError:
+            raise
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+        # Case 3: Server returns {"document": <DoclingDocument>} or {"document": {"json_content": ...}}
+        if isinstance(raw, dict) and "document" in raw:
+            doc_raw = raw["document"]
+            if isinstance(doc_raw, dict):
+                if doc_raw.get("schema_name") == "DoclingDocument":
+                    return DoclingDocument.model_validate(doc_raw)
+                if "json_content" in doc_raw and isinstance(doc_raw["json_content"], dict):
+                    return DoclingDocument.model_validate(doc_raw["json_content"])
+
+        # Fallback attempt to validate directly as DoclingDocument
+        try:
+            return DoclingDocument.model_validate(raw)
         except Exception as exc:
             raise DoclingApiError(
                 f"Failed to parse Docling API response with Pydantic: {exc}"
             ) from exc
-
-        if result.document.json_content is None:
-            raise DoclingApiError(
-                "Docling API converted successfully but returned no 'json_content' in document."
-            )
-
-        return result.document.json_content
 
     def __call__(self, page: SinglePageDocumentInstance) -> DoclingDocument:
         image = page.load().require_content()
