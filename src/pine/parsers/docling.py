@@ -116,7 +116,7 @@ class DoclingTransform:
         assert self.client is not None
         url = f"{self.api_url.rstrip('/')}/v1/convert/file"
         files = {
-            "files": (filename, content, content_type),
+            "file": (filename, content, content_type),
         }
         data = self.options.to_form_data()
 
