@@ -46,7 +46,20 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
     """Build the provider model for ``model_name`` from the run settings."""
     if settings.model_factory is not None:
         return settings.model_factory(model_name)
-    if "openrouter.ai" in settings.api_url:
+
+    is_vision = model_name == settings.vision_model
+    api_url = (
+        settings.vision_api_url
+        if (is_vision and settings.vision_api_url)
+        else settings.api_url
+    )
+    api_key = (
+        settings.vision_api_key
+        if (is_vision and settings.vision_api_key)
+        else settings.api_key
+    )
+
+    if "openrouter.ai" in api_url:
         from pydantic_ai.models.openrouter import (
             OpenRouterModel,
             OpenRouterModelSettings,
@@ -55,18 +68,25 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
 
         return OpenRouterModel(
             model_name,
-            provider=OpenRouterProvider(api_key=settings.api_key),
+            provider=OpenRouterProvider(api_key=api_key),
             # ask OpenRouter to report the cost of every request
             settings=OpenRouterModelSettings(openrouter_usage={"include": True}),
         )
+
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
-    return OpenAIChatModel(
+    class VllmCompatibleModel(OpenAIChatModel):
+        """Disables tool forcing so vLLM does not reject tool_choice='required'."""
+
+        def _supports_tool_forcing(
+            self, model_settings: Any, model_request_parameters: Any
+        ) -> bool:
+            return False
+
+    return VllmCompatibleModel(
         model_name,
-        provider=OpenAIProvider(
-            base_url=settings.api_url, api_key=settings.api_key or "dummy"
-        ),
+        provider=OpenAIProvider(base_url=api_url, api_key=api_key or "dummy"),
     )
 
 

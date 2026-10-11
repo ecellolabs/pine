@@ -38,6 +38,8 @@ class AgentSettings:
     output_dir: Path
     api_url: str = DEFAULT_API_URL
     api_key: str = ""
+    vision_api_url: str | None = None
+    vision_api_key: str | None = None
     text_model: str = DEFAULT_TEXT_MODEL
     vision_model: str = DEFAULT_VISION_MODEL
     max_rounds: int = 2
@@ -58,6 +60,7 @@ class AgentSettings:
         """Settings without the API key, for writing into run folders."""
         return {
             "api_url": self.api_url,
+            "vision_api_url": self.vision_api_url,
             "text_model": self.text_model,
             "vision_model": self.vision_model,
             "max_rounds": self.max_rounds,

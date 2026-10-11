@@ -116,6 +116,20 @@ def test_docling_transform_convert_bytes_success() -> None:
     assert exported["name"] == "test_page"
 
 
+def test_docling_transform_direct_docling_document_response() -> None:
+    raw_doc = DoclingDocument(name="direct_doc").model_dump()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/convert/file"
+        return httpx.Response(200, json=raw_doc)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    transform = DoclingTransform(api_url=MOCK_API_URL, client=client)
+    doc = transform.convert_bytes(b"dummy image bytes")
+    assert isinstance(doc, DoclingDocument)
+    assert doc.name == "direct_doc"
+
+
 def test_docling_transform_call_with_page() -> None:
     raw_doc = DoclingDocument(name="page_1").model_dump()
 

@@ -215,6 +215,18 @@ def main() -> None:
         help="Model used for page images.",
     )
     parser.add_argument(
+        "--vision-api-url",
+        type=str,
+        default=os.getenv("VISION_API_URL"),
+        help="Separate OpenAI-compatible base URL for the vision model.",
+    )
+    parser.add_argument(
+        "--vision-api-key",
+        type=str,
+        default=os.getenv("VISION_API_KEY"),
+        help="Separate API key for the vision model endpoint.",
+    )
+    parser.add_argument(
         "--max-rounds",
         type=int,
         default=2,
@@ -279,10 +291,20 @@ def main() -> None:
         batch_dir.mkdir(parents=True, exist_ok=True)
     else:
         batch_dir = new_batch_dir(args.output_dir, batch_label(resolved))
+    vision_url = args.vision_api_url
+    vision_key = args.vision_api_key
+    if not vision_url and "openrouter.ai" not in args.api_url:
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+            vision_url = DEFAULT_API_URL
+            vision_key = openrouter_key
+
     settings = AgentSettings(
         output_dir=batch_dir,
         api_url=args.api_url,
         api_key=args.api_key,
+        vision_api_url=vision_url,
+        vision_api_key=vision_key,
         text_model=args.text_model,
         vision_model=args.vision_model,
         max_rounds=args.max_rounds,
