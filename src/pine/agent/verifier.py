@@ -85,6 +85,12 @@ def decide(
     rounds_left = round_no < max_rounds
     if status == "error":
         return "ABSTAIN"
+    if verdict is None and status == "answered":
+        # the verifier could not run: that is no evidence against the answer, so a
+        # quote-checked answer stands; otherwise behave as for an unsupported one
+        if any_quote_ok:
+            return "ACCEPT_WEAK_GROUNDING"
+        return "REPLAN" if rounds_left else "ABSTAIN"
     if status == "not_answerable":
         if verdict == "supported" or not rounds_left:
             return "ACCEPT_ABSTAIN"
@@ -258,7 +264,7 @@ def run_verifier(
     any_quote_ok = any(q["source"] for q in quote_checks)
     decision = decide(
         final["status"],
-        llm_verdict.get("verdict"),
+        None if llm_verdict.get("_error") else llm_verdict.get("verdict"),
         any_quote_ok,
         bool(final.get("ledger")),
         round_no,

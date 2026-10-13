@@ -47,6 +47,10 @@ class AgentSettings:
     cache_dir: Path | None = None
     docling_url: str | None = None
     rapidocr_backend: str = "torch"
+    # False sends OpenRouter ``reasoning: {enabled: false}`` (hybrid-thinking models).
+    reasoning: bool = True
+    # Multiplies every call's max_tokens; reasoning models need room to think before answering.
+    max_tokens_scale: float = 1.0
     # Optional factory returning a Pydantic AI ``Model`` for a model name; used by
     # tests (FunctionModel / TestModel) and by anyone who wants a custom provider.
     model_factory: Callable[[str], Model] | None = None
@@ -67,6 +71,8 @@ class AgentSettings:
             "max_tool_calls": self.max_tool_calls,
             "docling_url": self.docling_url,
             "rapidocr_backend": self.rapidocr_backend,
+            "reasoning": self.reasoning,
+            "max_tokens_scale": self.max_tokens_scale,
             "llm_cache_dir": str(self.llm_cache_dir),
             "agent_framework": "pydantic-ai",
         }

@@ -39,6 +39,8 @@ _RESPONSE_ADAPTER: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 _PARAMS_ADAPTER: TypeAdapter[ModelRequestParameters] = TypeAdapter(
     ModelRequestParameters
 )
+# a dropped connection must fail (and be retried) instead of hanging the batch
+REQUEST_TIMEOUT_S = 180
 _VOLATILE_KEYS = {"timestamp", "run_id", "conversation_id", "metadata", "state"}
 
 
@@ -66,11 +68,16 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
         )
         from pydantic_ai.providers.openrouter import OpenRouterProvider
 
+        or_settings = OpenRouterModelSettings(
+            openrouter_usage={"include": True}, timeout=REQUEST_TIMEOUT_S
+        )
+        if not settings.reasoning:
+            or_settings["openrouter_reasoning"] = {"enabled": False}
         return OpenRouterModel(
             model_name,
             provider=OpenRouterProvider(api_key=api_key),
             # ask OpenRouter to report the cost of every request
-            settings=OpenRouterModelSettings(openrouter_usage={"include": True}),
+            settings=or_settings,
         )
 
     from pydantic_ai.models.openai import OpenAIChatModel
@@ -87,6 +94,7 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
     return VllmCompatibleModel(
         model_name,
         provider=OpenAIProvider(base_url=api_url, api_key=api_key or "dummy"),
+        settings=ModelSettings(timeout=REQUEST_TIMEOUT_S),
     )
 
 
@@ -275,6 +283,14 @@ class TracedModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
+        scale = self.run_settings.max_tokens_scale
+        if scale != 1.0 and model_settings and model_settings.get("max_tokens"):
+            model_settings = ModelSettings(
+                **{
+                    **model_settings,
+                    "max_tokens": int(model_settings["max_tokens"] * scale),
+                }
+            )
         key = self._cache_key(messages, model_settings, model_request_parameters)
         cache_file = self.cache_dir / f"{key}.json"
         from_cache = cache_file.exists()

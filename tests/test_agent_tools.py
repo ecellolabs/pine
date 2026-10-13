@@ -110,6 +110,10 @@ def test_decision_rule() -> None:
         decide("not_answerable", "insufficient", False, False, 2, 2) == "ACCEPT_ABSTAIN"
     )
     assert decide("error", None, False, False, 1, 2) == "ABSTAIN"
+    # a crashed verifier (verdict None) must not reject a quote-checked answer
+    assert decide("answered", None, True, True, 2, 2) == "ACCEPT_WEAK_GROUNDING"
+    assert decide("answered", None, False, True, 2, 2) == "ABSTAIN"
+    assert decide("answered", None, False, True, 1, 2) == "REPLAN"
 
 
 def test_settings_public_hides_key(tmp_path: Path) -> None:
@@ -117,6 +121,8 @@ def test_settings_public_hides_key(tmp_path: Path) -> None:
     assert "secret" not in json.dumps(s.public())
     assert s.llm_cache_dir == tmp_path / ".cache" / "llm"
     assert s.public()["agent_framework"] == "pydantic-ai"
+    assert s.public()["reasoning"] is True
+    assert s.public()["max_tokens_scale"] == 1.0
 
 
 # fixtures

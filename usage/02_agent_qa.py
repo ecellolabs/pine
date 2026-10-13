@@ -257,6 +257,17 @@ def main() -> None:
         help="RapidOCR inference backend for in-process Docling (torch | onnxruntime).",
     )
     parser.add_argument(
+        "--no-reasoning",
+        action="store_true",
+        help="Disable model reasoning/thinking (OpenRouter only), for hybrid-thinking models such as qwen3.5.",
+    )
+    parser.add_argument(
+        "--max-tokens-scale",
+        type=float,
+        default=1.0,
+        help="Multiply every call's max_tokens (use ~6 for reasoning models, which spend the budget thinking).",
+    )
+    parser.add_argument(
         "--no-html",
         action="store_true",
         help="Do not (re)build <batch-dir>/visual_samples.html at the end.",
@@ -312,6 +323,8 @@ def main() -> None:
         cache_dir=args.cache_dir,
         docling_url=args.docling_url,
         rapidocr_backend=args.rapidocr_backend,
+        reasoning=not args.no_reasoning,
+        max_tokens_scale=args.max_tokens_scale,
     )
     manifest: dict[str, Any] = {
         "batch": batch_dir.name,
