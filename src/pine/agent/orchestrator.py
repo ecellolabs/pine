@@ -246,9 +246,9 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
                 if qp is not None:
                     p = _page_ok(deps, qp)
                     page_text = deps.pages_md.get(p, "")
-                    in_text = quote_in_text(out.quote, page_text)
+                    in_text = quote_in_text(out.quote, page_text)[0]
                     in_img = any(
-                        i["page"] == p and quote_in_text(out.quote, i["result"])
+                        i["page"] == p and quote_in_text(out.quote, i["result"])[0]
                         for i in deps.image_inspections
                     )
                     if in_text or in_img:

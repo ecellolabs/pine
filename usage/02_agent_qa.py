@@ -41,6 +41,7 @@ from pine.agent.common import (
     AgentSettings,
     batch_label,
     new_batch_dir,
+    redacted_argv,
     write_json,
 )
 from pine.agent.runner import RunSpec, run_sample
@@ -329,7 +330,7 @@ def main() -> None:
     manifest: dict[str, Any] = {
         "batch": batch_dir.name,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "command": " ".join(sys.argv),
+        "command": redacted_argv(),
         "dataset": args.name,
         "selection": describe(resolved),
         "sample_set": resolved.name if isinstance(resolved, SampleSet) else None,

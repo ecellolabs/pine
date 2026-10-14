@@ -4,12 +4,41 @@ validation errors, so downstream code only ever sees well-formed data."""
 
 from __future__ import annotations
 
-from typing import Literal
+import json
+from typing import Any, Literal, get_origin
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
-class PageSummary(BaseModel):
+class ToolArgs(BaseModel):
+    """Base of every model reply. Some models (qwen3.5 via OpenRouter) send nested
+    array arguments as a JSON-encoded *string* (``"sections": "[{...}]"``); Pydantic
+    rejects that and the retry repeats it, so decode such strings before validating.
+    A ``null`` for an optional list (``"subsections": null``) means "none"."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _decode_json_strings(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fixed = dict(data)
+        for name, field in cls.model_fields.items():
+            value = fixed.get(name)
+            if value is None and name in fixed and not field.is_required():
+                del fixed[name]
+            elif (
+                isinstance(value, str)
+                and value.lstrip().startswith("[")
+                and get_origin(field.annotation) is list
+            ):
+                try:
+                    fixed[name] = json.loads(value)
+                except ValueError:
+                    pass
+        return fixed
+
+
+class PageSummary(ToolArgs):
     """Index node content for one page."""
 
     title: str = Field(description="Short descriptive title for the page, <= 12 words")
@@ -34,7 +63,7 @@ class PageSummary(BaseModel):
     )
 
 
-class Section(BaseModel):
+class Section(ToolArgs):
     """A contiguous page range of the document; may contain subsections."""
 
     title: str
@@ -43,13 +72,13 @@ class Section(BaseModel):
     subsections: list[Section] = Field(default_factory=list)
 
 
-class Hierarchy(BaseModel):
+class Hierarchy(ToolArgs):
     """Table of contents: top-level sections covering every page exactly once."""
 
     sections: list[Section]
 
 
-class Plan(BaseModel):
+class Plan(ToolArgs):
     """Planner output: how to attack the question."""
 
     question_type: str = Field(
@@ -82,7 +111,7 @@ class Plan(BaseModel):
     )
 
 
-class FinalAnswer(BaseModel):
+class FinalAnswer(ToolArgs):
     """The orchestrator's final output (emitted through the final_answer tool)."""
 
     status: Literal["answered", "not_answerable"]
@@ -105,7 +134,7 @@ class FinalAnswer(BaseModel):
     reasoning: str = ""
 
 
-class Verdict(BaseModel):
+class Verdict(ToolArgs):
     """Verifier output."""
 
     verdict: Literal["supported", "not_supported", "insufficient"]

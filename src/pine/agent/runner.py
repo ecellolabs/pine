@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -30,6 +29,7 @@ from pine.agent.common import (
     AgentSettings,
     CostLedger,
     read_json,
+    redacted_argv,
     render_page,
     setup_logger,
     write_json,
@@ -204,7 +204,7 @@ def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
         out = d0 / f"gold_evidence_page_{p:03d}.jpg"
         if not out.exists():
             out.write_bytes(render_page(spec.pdf_path, p, max_side=1024))
-    log.info("DRIVER %s | output=%s", " ".join(sys.argv) or "<library call>", run_dir)
+    log.info("DRIVER %s | output=%s", redacted_argv() or "<library call>", run_dir)
     log.info(
         "RUN %s | doc=%s | Q=%r | gold=%r (%s) pages=%s",
         spec.run_id,

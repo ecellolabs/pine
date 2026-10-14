@@ -13,7 +13,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import TypeAdapter
 from pydantic_ai.messages import (
@@ -283,6 +283,15 @@ class TracedModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
+        if (
+            model_settings
+            and "temperature" in model_settings
+            and self.wrapped.model_name.startswith("claude-")
+        ):
+            # Claude models reject the (deprecated) temperature parameter with a 400
+            trimmed = dict(model_settings)
+            del trimmed["temperature"]
+            model_settings = cast(ModelSettings, trimmed)
         scale = self.run_settings.max_tokens_scale
         if scale != 1.0 and model_settings and model_settings.get("max_tokens"):
             model_settings = ModelSettings(

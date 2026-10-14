@@ -207,3 +207,28 @@ class CostLedger:
             "cost_usd": round(self.cost_usd, 6),
             "llm_latency_s": round(self.latency_s, 2),
         }
+
+
+_SECRET_FLAGS = ("--api-key", "--vision-api-key")
+
+
+def redacted_argv(argv: list[str] | None = None) -> str:
+    """The command line with the value of every ``--*api-key`` flag masked, so run
+    logs and manifests never contain a key passed on the command line."""
+    import sys
+
+    args = list(sys.argv if argv is None else argv)
+    out: list[str] = []
+    mask_next = False
+    for a in args:
+        if mask_next:
+            out.append("***")
+            mask_next = False
+        elif a in _SECRET_FLAGS:
+            out.append(a)
+            mask_next = True
+        elif a.startswith(tuple(f + "=" for f in _SECRET_FLAGS)):
+            out.append(a.split("=", 1)[0] + "=***")
+        else:
+            out.append(a)
+    return " ".join(out)

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
+from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -17,12 +19,15 @@ from pydantic_ai.messages import (
     ToolCallPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.settings import ModelSettings
 
 from pine.agent.captions import captions_from_markdown
 from pine.agent.common import AgentSettings, CostLedger
 from pine.agent.index import _repair, _validate_tree, run_index
+from pine.agent.llm import traced_model
 from pine.agent.orchestrator import BM25, TOOL_NAMES, run_orchestrator
 from pine.agent.planner import run_planner
+from pine.agent.schemas import Hierarchy
 from pine.agent.verifier import decide, quote_in_text, run_verifier
 from pine.agent.visual_samples import (
     build_visual_samples,
@@ -481,6 +486,78 @@ def test_abstention_is_not_gated_but_answers_need_evidence(tmp_path: Path) -> No
     assert final["salvaged"] is True
 
 
+def test_inline_final_answer_quote_must_exist_on_the_page(tmp_path: Path) -> None:
+    """quote_in_text returns (found, similarity); a tuple is always truthy, so an
+    invented inline quote used to be recorded as page_text evidence."""
+    run_dir = tmp_path / "run"
+    parser_dir, _ = _write_parsed_doc(run_dir)
+    index = json.loads((run_dir / "02_index" / "index.json").read_text())
+
+    def invented_quote(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "final_answer",
+                    {
+                        "status": "answered",
+                        "answer": "red",
+                        "evidence_pages": [2],
+                        "quote": "The sky over Gadanki is permanently crimson.",
+                        "quote_page": 2,
+                    },
+                )
+            ]
+        )
+
+    settings = _settings(
+        tmp_path, lambda name: FunctionModel(invented_quote, model_name=name)
+    )
+    final = run_orchestrator(
+        settings,
+        "Q3 (distinct prompt so the response cache cannot replay earlier runs)?",
+        run_dir / "doc.pdf",
+        index,
+        {},
+        parser_dir,
+        run_dir / "04_orchestrator_c",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+    )
+    assert final["salvaged"] is True and not final["ledger"]
+
+
+def test_json_encoded_array_arguments_are_decoded() -> None:
+    """qwen3.5 sends nested array arguments as a JSON string; that must validate."""
+    sections = json.dumps(
+        [
+            {"title": "A", "start_page": 1, "end_page": 2, "subsections": []},
+            {
+                "title": "B",
+                "start_page": 3,
+                "end_page": 4,
+                "subsections": json.dumps(
+                    [{"title": "B1", "start_page": 3, "end_page": 4}]
+                ),
+            },
+        ]
+    )
+    h = Hierarchy.model_validate({"sections": sections})
+    assert [s.title for s in h.sections] == ["A", "B"]
+    assert h.sections[1].subsections[0].title == "B1"
+    # "subsections": null means no subsections
+    h = Hierarchy.model_validate(
+        {
+            "sections": [
+                {"title": "A", "start_page": 1, "end_page": 2, "subsections": None}
+            ]
+        }
+    )
+    assert h.sections[0].subsections == []
+    # a string that is not JSON still fails validation instead of being swallowed
+    with pytest.raises(ValidationError):
+        Hierarchy.model_validate({"sections": "[not json"})
+
+
 def test_planner_and_index_with_stub_model(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     parser_dir, index_dir = _write_parsed_doc(run_dir)
@@ -764,3 +841,51 @@ def test_planner_merges_locator_even_when_model_skips_tool(tmp_path: Path) -> No
     assert plan2["candidate_sections"][0] == "S1" and plan2["anchor_pages"][0] == 2
     assert plan2["locator"]["tool_called"] is False
     assert (tmp_path / "03_planner" / "locate_round1.json").exists()
+
+
+def test_claude_models_do_not_receive_temperature(tmp_path: Path) -> None:
+    seen: list[dict[str, Any]] = []
+
+    def record(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("ok")])
+
+    settings = _settings(tmp_path, lambda name: FunctionModel(record, model_name=name))
+    for name in ("claude-opus-5-5", "qwen/qwen3.5-9b"):
+        step_dir = tmp_path / name.replace("/", "_")
+        step_dir.mkdir()
+        model = traced_model(
+            settings,
+            name,
+            step_dir=step_dir,
+            ledger=CostLedger(tmp_path),
+            logger=logging.getLogger("t"),
+            step_name="t",
+        )
+        original = model.wrapped.request
+
+        async def spy(messages, model_settings, params, _o=original):  # type: ignore[no-untyped-def]
+            seen.append(dict(model_settings or {}))
+            return await _o(messages, model_settings, params)
+
+        model.wrapped.request = spy  # type: ignore[method-assign]
+        Agent(
+            model, model_settings=ModelSettings(temperature=0.0, max_tokens=50)
+        ).run_sync("hi")
+    assert "temperature" not in seen[0] and seen[1].get("temperature") == 0.0
+
+
+def test_api_keys_are_masked_in_logged_command() -> None:
+    from pine.agent.common import redacted_argv
+
+    cmd = redacted_argv(
+        [
+            "02_agent_qa.py",
+            "--api-key",
+            "sk-secret",
+            "--vision-api-key=sk-other",
+            "--x",
+            "1",
+        ]
+    )
+    assert "sk-secret" not in cmd and "sk-other" not in cmd
+    assert cmd == "02_agent_qa.py --api-key *** --vision-api-key=*** --x 1"
