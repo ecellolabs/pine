@@ -167,8 +167,30 @@ def _summary_md(
     return "\n".join(lines)
 
 
-def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
-    """Run the whole pipeline for one sample and return the evaluation result."""
+def _restore_shared(shared_dir: Path, run_dir: Path) -> bool:
+    """Copy a document's already built parser and index folders into a run folder."""
+    if not (shared_dir / ".complete").exists():
+        return False
+    for name in (STEP_DIRS[1], STEP_DIRS[2]):
+        shutil.copytree(shared_dir / name, run_dir / name, dirs_exist_ok=True)
+    return True
+
+
+def _publish_shared(shared_dir: Path, run_dir: Path) -> None:
+    """Keep this run's parser and index folders so the document's other questions reuse them."""
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    for name in (STEP_DIRS[1], STEP_DIRS[2]):
+        shutil.copytree(run_dir / name, shared_dir / name, dirs_exist_ok=True)
+    (shared_dir / ".complete").touch()
+
+
+def run_sample(
+    spec: RunSpec, settings: AgentSettings, shared_dir: Path | None = None
+) -> dict[str, Any]:
+    """Run the whole pipeline for one sample and return the evaluation result.
+
+    ``shared_dir`` is a per-document folder: the parser and index of a document do not
+    depend on the question, so the first question builds them and the others copy them."""
     run_dir = settings.output_dir / spec.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     run_log = run_dir / "run.log"
@@ -215,6 +237,10 @@ def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
         gold["evidence_pages"],
     )
 
+    reused = shared_dir is not None and _restore_shared(shared_dir, run_dir)
+    if reused:
+        log.info("parser and index reused from %s", shared_dir)
+
     # ---- 01 parser
     t = time.perf_counter()
     run_parser(
@@ -237,6 +263,8 @@ def run_sample(spec: RunSpec, settings: AgentSettings) -> dict[str, Any]:
         ledger,
     )
     timings["02_index"] = round(time.perf_counter() - t, 1)
+    if shared_dir is not None and not reused:
+        _publish_shared(shared_dir, run_dir)
     cost_after_index = ledger.summary()
 
     # ---- 03-05 loop

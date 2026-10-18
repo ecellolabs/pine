@@ -91,10 +91,16 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
         ) -> bool:
             return False
 
+    vllm_settings = ModelSettings(timeout=REQUEST_TIMEOUT_S)
+    if not settings.reasoning:
+        # Qwen3.x chat template switch: answer directly instead of thinking first
+        vllm_settings["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": False}
+        }
     return VllmCompatibleModel(
         model_name,
         provider=OpenAIProvider(base_url=api_url, api_key=api_key or "dummy"),
-        settings=ModelSettings(timeout=REQUEST_TIMEOUT_S),
+        settings=vllm_settings,
     )
 
 

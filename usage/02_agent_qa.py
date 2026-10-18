@@ -22,11 +22,13 @@ Afterwards build the HTML visual-samples page (first 20 runs) with ``usage/03_vi
 from __future__ import annotations
 
 import argparse
+import json
 import os
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")  # keep run logs clean
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, cast
 
@@ -141,6 +143,25 @@ def build_run_specs(
                     "check the text in the sample-set file"
                 )
     return specs
+
+
+def run_doc(
+    doc_specs: list[RunSpec], settings: AgentSettings, shared_root: Path
+) -> list[tuple[RunSpec, dict[str, Any] | None, str | None]]:
+    """Run one document's questions in order; a finished question is loaded, not rerun."""
+    out: list[tuple[RunSpec, dict[str, Any] | None, str | None]] = []
+    for spec in doc_specs:
+        finished = settings.output_dir / spec.run_id / "06_evaluation" / "result.json"
+        try:
+            if finished.exists():
+                out.append((spec, json.loads(finished.read_text()), None))
+                continue
+            result = run_sample(spec, settings, shared_root / spec.pdf_path.stem)
+            out.append((spec, result, None))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(f"run {spec.run_id} failed")
+            out.append((spec, None, str(exc)))
+    return out
 
 
 def main() -> None:
@@ -260,13 +281,22 @@ def main() -> None:
     parser.add_argument(
         "--no-reasoning",
         action="store_true",
-        help="Disable model reasoning/thinking (OpenRouter only), for hybrid-thinking models such as qwen3.5.",
+        help="Disable model reasoning/thinking (OpenRouter reasoning flag, vLLM enable_thinking=false), for hybrid-thinking models such as qwen3.5.",
     )
     parser.add_argument(
         "--max-tokens-scale",
         type=float,
         default=1.0,
         help="Multiply every call's max_tokens (use ~6 for reasoning models, which spend the budget thinking).",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Documents processed in parallel (separate processes). Each document's "
+            "questions run one after another and share its parser and index."
+        ),
     )
     parser.add_argument(
         "--no-html",
@@ -339,33 +369,46 @@ def main() -> None:
     }
     logger.info(f"{len(specs)} sample run(s) -> {batch_dir.resolve()}")
     results = []
-    for i, spec in enumerate(specs, 1):
-        logger.info(f"[{i}/{len(specs)}] {spec.run_id}: {spec.question!r}")
-        try:
-            result = run_sample(spec, settings)
-            manifest["runs"].append(
-                {
-                    "run_id": spec.run_id,
-                    "doc_id": spec.doc_id,
-                    "question": spec.question,
-                    "status": "ok",
-                    "score": result["score_official_rule"],
-                    "answer": result["raw_system_answer"],
-                }
+    by_doc: dict[str, list[RunSpec]] = {}
+    for spec in specs:
+        by_doc.setdefault(spec.doc_id, []).append(spec)
+    shared_root = batch_dir / "_doc_cache"
+    done = 0
+
+    def record(spec: RunSpec, result: dict[str, Any] | None, error: str | None) -> None:
+        nonlocal done
+        done += 1
+        entry: dict[str, Any] = {
+            "run_id": spec.run_id,
+            "doc_id": spec.doc_id,
+            "question": spec.question,
+        }
+        if result is not None:
+            entry.update(
+                status="ok",
+                score=result["score_official_rule"],
+                answer=result["raw_system_answer"],
             )
             results.append(result)
-        except Exception as exc:
-            logger.exception(f"run {spec.run_id} failed")
-            manifest["runs"].append(
-                {
-                    "run_id": spec.run_id,
-                    "doc_id": spec.doc_id,
-                    "question": spec.question,
-                    "status": "failed",
-                    "error": str(exc),
-                }
-            )
+        else:
+            entry.update(status="failed", error=error)
+        manifest["runs"].append(entry)
         write_json(batch_dir / "manifest.json", manifest)
+        logger.info(f"[{done}/{len(specs)}] {spec.run_id}: {entry['status']}")
+
+    if args.workers > 1:
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = [
+                pool.submit(run_doc, doc_specs, settings, shared_root)
+                for doc_specs in by_doc.values()
+            ]
+            for future in as_completed(futures):
+                for spec, result, error in future.result():
+                    record(spec, result, error)
+    else:
+        for doc_specs in by_doc.values():
+            for spec, result, error in run_doc(doc_specs, settings, shared_root):
+                record(spec, result, error)
 
     scored = [r["score_official_rule"] for r in results]
     print("\n" + "=" * 70)
