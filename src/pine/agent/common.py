@@ -57,6 +57,18 @@ class AgentSettings:
     # are unchanged.
     thinking_sampling: bool = False
     presence_penalty: float = 0.0
+    # LLM judge for step 6. Off when judge_model is None (the rule-based scorer is then the
+    # score). The URL and key default to the ones the agent uses, so one vLLM server can do both.
+    judge_model: str | None = None
+    judge_api_url: str | None = None
+    judge_api_key: str | None = None
+    judge_mode: str = "judge"  # judge | extract | both
+    judge_disable_thinking: bool = False
+    judge_max_tokens: int = 300  # raise for a reasoning judge: its thinking counts too
+    judge_extra_body: dict[str, Any] | None = None  # e.g. {"reasoning_effort": "low"}
+    judge_chat: Callable[[str], tuple[str, int, int]] | None = (
+        None  # tests inject a stub
+    )
     # Seconds a single model call may take; thinking calls on a slow GPU need far more than 180.
     request_timeout_s: float = 180.0
     # Optional factory returning a Pydantic AI ``Model`` for a model name; used by
@@ -84,6 +96,12 @@ class AgentSettings:
             "thinking_sampling": self.thinking_sampling,
             "presence_penalty": self.presence_penalty,
             "request_timeout_s": self.request_timeout_s,
+            "judge_model": self.judge_model,
+            "judge_api_url": self.judge_api_url,
+            "judge_mode": self.judge_mode,
+            "judge_disable_thinking": self.judge_disable_thinking,
+            "judge_max_tokens": self.judge_max_tokens,
+            "judge_extra_body": self.judge_extra_body,
             "llm_cache_dir": str(self.llm_cache_dir),
             "agent_framework": "pydantic-ai",
         }

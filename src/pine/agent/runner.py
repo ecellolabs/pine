@@ -36,6 +36,7 @@ from pine.agent.common import (
     write_json,
 )
 from pine.agent.index import run_index
+from pine.agent.judge import make_judge_chat, score_answer
 from pine.agent.orchestrator import run_orchestrator
 from pine.agent.parser import run_parser
 from pine.agent.planner import run_planner
@@ -101,9 +102,10 @@ def _summary_md(
         "|---|---|",
         f"| System answer | `{result['raw_system_answer']}` |",
         (
-            f"| Official-rule score | {result['score_official_rule']:.2f} "
+            f"| Score ({result['score_source']}) | {result['score']:.2f} "
             f"({'CORRECT' if result['correct'] else 'WRONG'}) |"
         ),
+        f"| Rule-based score (audit) | {result['score_official_rule']:.2f} |",
         f"| Agent status / verifier decision | {final['status']} / {verification['decision']} |",
         f"| Cited pages (gold hit) | {result['cited_pages']} ({result['cited_page_hit']}) |",
         f"| Gold page visited by agent | {result['gold_page_visited_by_agent']} |",
@@ -183,6 +185,38 @@ def _publish_shared(shared_dir: Path, run_dir: Path) -> None:
     for name in (STEP_DIRS[1], STEP_DIRS[2]):
         shutil.copytree(run_dir / name, shared_dir / name, dirs_exist_ok=True)
     (shared_dir / ".complete").touch()
+
+
+def judge_final_answer(
+    settings: AgentSettings,
+    question: str,
+    gold: dict[str, Any],
+    verification: dict[str, Any],
+    log: Any,
+) -> dict[str, Any] | None:
+    """Step 6 judging: the LLM scores the final answer, or None when no judge is configured."""
+    if not settings.judge_model:
+        return None
+    chat = settings.judge_chat or make_judge_chat(
+        settings.judge_api_url or settings.api_url,
+        settings.judge_api_key or settings.api_key,
+        settings.judge_model,
+        settings.request_timeout_s,
+        settings.judge_disable_thinking,
+        settings.judge_max_tokens,
+        settings.judge_extra_body,
+    )
+    judged = score_answer(
+        question,
+        str(gold["answer"]),
+        gold["answer_format"],
+        verification["final_answer"],
+        chat,
+        settings.judge_mode,
+    )
+    if judged["error"]:
+        log.error("LLM judge failed, using the rule-based score: %s", judged["error"])
+    return judged
 
 
 def run_sample(
@@ -343,6 +377,7 @@ def run_sample(
     # ---- 06 eval
     cost = ledger.summary()
     cost["index_build_share"] = cost_after_index
+    judged = judge_final_answer(settings, spec.question, gold, verification, log)
     result = run_eval(
         {"run_id": spec.run_id, "question": spec.question},
         gold,
@@ -352,6 +387,8 @@ def run_sample(
         run_log,
         cost,
         timings,
+        judged=judged,
+        judge_mode=settings.judge_mode,
     )
     write_json(run_dir / "cost.json", cost)
     (run_dir / "summary.md").write_text(
@@ -369,10 +406,11 @@ def run_sample(
         encoding="utf-8",
     )
     log.info(
-        "DONE %s -> answer=%r score=%.2f cost=$%.4f",
+        "DONE %s -> answer=%r score=%.2f (%s) cost=$%.4f",
         spec.run_id,
         result["raw_system_answer"],
-        result["score_official_rule"],
+        result["score"],
+        result["score_source"],
         cost["cost_usd"],
     )
     return result

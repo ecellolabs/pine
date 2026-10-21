@@ -24,8 +24,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pine.agent.judge import JudgeChat, score_answer
 from pine.agent.locate import BM25
-from pine.agent.scoring import eval_score, extract_answer
+from pine.agent.scoring import eval_score, extract_answer, pick_score
 
 INSTRUCTION = (
     "Answer the question using only the document pages above. Reply with the final "
@@ -54,6 +55,8 @@ class BaselineSettings:
     parsed_dir: Path | None = (
         None  # <batch>/_doc_cache: Docling text the pipeline built
     )
+    judge_chat: JudgeChat | None = None  # LLM judge; None keeps the rule-based score
+    judge_mode: str = "judge"
 
 
 @dataclass
@@ -238,7 +241,22 @@ def run_one(spec: Spec, settings: BaselineSettings, chat: ChatFn) -> dict[str, A
         )
         answer, truncated = clean_reply(reply, settings.thinking, finish)
         extracted = extract_answer(answer) if answer else ""
-        score = eval_score(spec.gold["answer"], extracted, spec.gold["answer_format"])
+        rule_score = eval_score(
+            spec.gold["answer"], extracted, spec.gold["answer_format"]
+        )
+        judged = (
+            score_answer(
+                spec.question,
+                str(spec.gold["answer"]),
+                spec.gold["answer_format"],
+                answer,
+                settings.judge_chat,
+                settings.judge_mode,
+            )
+            if settings.judge_chat is not None
+            else None
+        )
+        score, score_source = pick_score(rule_score, judged, settings.judge_mode)
         gold_pages = spec.gold["evidence_pages"]
         rec.update(
             n_pages_in_document=len(texts),
@@ -247,7 +265,10 @@ def run_one(spec: Spec, settings: BaselineSettings, chat: ChatFn) -> dict[str, A
             raw_reply_tail=reply[-300:],
             finish_reason=finish,
             extracted_answer=extracted,
-            score_official_rule=score,
+            score=score,
+            score_source=score_source,
+            score_official_rule=rule_score,
+            judge=judged,
             truncated_in_thinking=truncated,
             gold_page_in_context=bool(set(pages) & set(gold_pages))
             if gold_pages
@@ -258,6 +279,7 @@ def run_one(spec: Spec, settings: BaselineSettings, chat: ChatFn) -> dict[str, A
     except Exception as exc:  # noqa: BLE001 - one bad question must not stop the batch
         rec["error"] = f"{type(exc).__name__}: {exc}"[:500]
         rec["score_official_rule"] = 0.0
+        rec["score"] = 0.0
     rec["seconds"] = round(time.perf_counter() - t0, 1)
     return rec
 
@@ -304,11 +326,16 @@ def run_baseline(
     return [records[s.run_id] for s in specs if s.run_id in records]
 
 
+def _sc(r: dict[str, Any]) -> float:
+    """The score a record is reported with (older records only have the rule-based one)."""
+    return float(r.get("score", r["score_official_rule"]))
+
+
 def summarize(records: list[dict[str, Any]], total: int) -> dict[str, Any]:
     """Accuracy overall, by answer format and by evidence page count, plus an F1."""
 
     def acc(rows: list[dict[str, Any]]) -> float:
-        return sum(r["score_official_rule"] for r in rows) / len(rows) if rows else 0.0
+        return sum(_sc(r) for r in rows) / len(rows) if rows else 0.0
 
     unanswerable = [
         r for r in records if str(r["gold_answer"]).strip() == "Not answerable"
@@ -329,8 +356,7 @@ def summarize(records: list[dict[str, Any]], total: int) -> dict[str, Any]:
         "questions_scored": len(records),
         "questions_total": total,
         "accuracy": acc(records),
-        "accuracy_failed_counted_zero": sum(r["score_official_rule"] for r in records)
-        / max(total, 1),
+        "accuracy_failed_counted_zero": sum(_sc(r) for r in records) / max(total, 1),
         "accuracy_answerable": recall,
         "accuracy_unanswerable": acc(unanswerable),
         "f1_approx": 2 * precision * recall / (precision + recall)
@@ -366,5 +392,5 @@ def pine_scores(batch_dir: Path) -> dict[str, float]:
     out = {}
     for f in batch_dir.glob("*/06_evaluation/result.json"):
         r = json.loads(f.read_text())
-        out[r["run_id"]] = float(r["score_official_rule"])
+        out[r["run_id"]] = _sc(r)
     return out

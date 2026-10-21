@@ -374,7 +374,7 @@ function renderRun(r, i){
   <div style="font-size:15px"><b>Q:</b> ${esc(q.question)}</div>
   <div class="kv">
     <div><b>Gold answer</b>${esc(gold.answer)} <span class="small">(${esc(gold.answer_format)}; pages ${esc(JSON.stringify(gold.evidence_pages))}; ${esc(gold.evidence_sources)})</span></div>
-    <div><b>System answer</b>${esc(res?res.raw_system_answer:'-')} ${res?badge((res.score_official_rule).toFixed(2)+' '+(res.correct?'CORRECT':'WRONG'), scoreCls):''}</div>
+    <div><b>System answer</b>${esc(res?res.raw_system_answer:'-')} ${res?badge(((res.score??res.score_official_rule)).toFixed(2)+' '+(res.correct?'CORRECT':'WRONG'), scoreCls):''}</div>
     <div><b>Agent status / verifier</b>${esc(res?res.agent_status:'')} / ${esc(res?res.verifier_decision:'')}</div>
     <div><b>Cited pages (gold hit)</b>${esc(JSON.stringify(res?res.cited_pages:[]))} (${esc(res?res.cited_page_hit:'')}) · visited ${esc(JSON.stringify(res?res.pages_visited:[]))}</div>
     <div><b>Cost</b>${fmt$(cost.cost_usd)} · ${cost.llm_calls} calls · ${cost.prompt_tokens}+${cost.completion_tokens} tokens</div>
@@ -494,7 +494,7 @@ function renderRun(r, i){
   h += step(i,3,'Agent loop — per round: Planner → Orchestrator → Verifier', `${rounds.length} round(s) · ${res?res.tool_calls_total:'?'} tool calls · ${esc(lastV.decision||'')}`, loopHtml||'<div class="small">no rounds recorded</div>');
 
   // ---- 4 eval
-  h += step(i,4,'Evaluation — official MMLongBench-Doc rules (no model call)', res?badge(res.score_official_rule.toFixed(2),scoreCls):'', res?`<div class="sum"><div><b>Gold</b><span>${esc(res.gold_answer)}</span> <span class="small">${esc(res.gold_answer_format)}</span></div><div><b>Extracted answer</b><span>${esc(res.extracted_answer)}</span></div><div><b>Score</b><span>${res.score_official_rule.toFixed(2)}</span></div><div><b>Cited page hit</b><span>${esc(res.cited_page_hit)}</span></div><div><b>Gold page visited</b><span>${esc(res.gold_page_visited_by_agent)}</span></div></div><div class="small">${esc(res.scorer_note)}</div>${inner('result.json',`<pre>${pj(res)}</pre>`)}`:'');
+  h += step(i,4,'Evaluation — '+(res&&res.score_source==='llm_judge'?'LLM judge (rule-based score kept for audit)':'official MMLongBench-Doc rules'), res?badge((res.score??res.score_official_rule).toFixed(2),scoreCls):'', res?`<div class="sum"><div><b>Gold</b><span>${esc(res.gold_answer)}</span> <span class="small">${esc(res.gold_answer_format)}</span></div><div><b>Extracted answer</b><span>${esc(res.extracted_answer)}</span></div><div><b>Score</b><span>${res.score_official_rule.toFixed(2)}</span></div><div><b>Cited page hit</b><span>${esc(res.cited_page_hit)}</span></div><div><b>Gold page visited</b><span>${esc(res.gold_page_visited_by_agent)}</span></div></div><div class="small">${esc(res.scorer_note)}</div>${inner('result.json',`<pre>${pj(res)}</pre>`)}`:'');
 
   // ---- model calls, chronological
   const calls=r.llm_calls;
@@ -539,7 +539,7 @@ function build(){
   document.getElementById('batch').textContent=[META.batch, META.selection, META.started_at].filter(Boolean).join(' · ');
   DATA.forEach((r,i)=>{
     const b=document.createElement('button'); b.className='tab'+(i===0?' active':'');
-    b.textContent=`Run ${i+1}: ${r.meta.run_id.replace(/^run\d+_/,'')}`+(r.result?` (${r.result.score_official_rule.toFixed(2)})`:'');
+    b.textContent=`Run ${i+1}: ${r.meta.run_id.replace(/^run\d+_/,'')}`+(r.result?` (${(r.result.score??r.result.score_official_rule).toFixed(2)})`:'');
     b.onclick=()=>selectRun(i); tabs.appendChild(b);
     main.insertAdjacentHTML('beforeend', renderRun(r,i));
   });

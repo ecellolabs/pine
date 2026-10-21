@@ -26,6 +26,7 @@ import os
 import sys
 from pathlib import Path
 
+from pine.agent.judge import make_judge_chat
 from pine.agent.baseline import (
     BaselineSettings,
     load_specs,
@@ -77,6 +78,19 @@ def main() -> None:
     p.add_argument("--max-tokens", type=int, default=None)
     p.add_argument("--temperature", type=float, default=None)
     p.add_argument("--workers", type=int, default=16)
+    p.add_argument(
+        "--judge-model",
+        default=None,
+        help="Score with an LLM judge (same judge as pipeline step 6). Default: rule-based scorer.",
+    )
+    p.add_argument("--judge-api-url", default=None, help="Default: --api-url.")
+    p.add_argument("--judge-api-key", default=None, help="Default: --api-key.")
+    p.add_argument(
+        "--judge-mode", choices=["judge", "extract", "both"], default="judge"
+    )
+    p.add_argument("--judge-disable-thinking", action="store_true")
+    p.add_argument("--judge-max-tokens", type=int, default=300)
+    p.add_argument("--judge-extra-body", type=json.loads, default=None)
     p.add_argument("--timeout", type=float, default=1200.0)
     p.add_argument(
         "--limit", type=int, default=None, help="Only the first N questions (pilot)."
@@ -121,13 +135,24 @@ def main() -> None:
         )
 
     chat = make_openai_chat(args.api_url, args.api_key, args.model, args.timeout)
+    if args.judge_model:
+        settings.judge_chat = make_judge_chat(
+            args.judge_api_url or args.api_url,
+            args.judge_api_key or args.api_key,
+            args.judge_model,
+            args.timeout,
+            args.judge_disable_thinking,
+            args.judge_max_tokens,
+            args.judge_extra_body,
+        )
+        settings.judge_mode = args.judge_mode
 
     def progress(i: int, n: int, rec: dict) -> None:
         if rec["error"]:
             print(f"[{i}/{n}] {rec['run_id']}: ERROR {rec['error'][:160]}", flush=True)
         elif i % 25 == 0 or i == n:
             print(
-                f"[{i}/{n}] last: {rec['run_id']} score={rec['score_official_rule']:.2f}",
+                f"[{i}/{n}] last: {rec['run_id']} score={rec['score']:.2f}",
                 flush=True,
             )
 
@@ -142,7 +167,7 @@ def main() -> None:
             pine[r["run_id"]] for r in shared
         ) / len(shared)
         summary["baseline_accuracy_same_questions"] = sum(
-            r["score_official_rule"] for r in shared
+            r["score"] for r in shared
         ) / len(shared)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 

@@ -28,8 +28,8 @@ ever contains the key.
 | `src/pine/parsers/docling.py` | remote Docling API transform (cluster) |
 | `src/pine/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
 | `src/pine/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
-| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `runner`, `visual_samples` (HTML page) |
-| `usage/0N_*.py` | stateless CLI stages (00 dataset, 01 Docling preprocess, 02 agent, 03 visual page; `B0_evaluation.py` is the single-pass VLM baseline, not a stage); `02_agent_qa.py` runs the agent (full dataset or a selection), `03_visual_samples.py` builds the visual-samples page |
+| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `judge` (LLM answer extraction and LLM judge over saved answers; prompts in `agent/prompts/`), `baseline` (document-in-the-prompt baselines, no agent), `runner`, `visual_samples` (HTML page) |
+| `usage/0N_*.py` | stateless CLI stages (00 dataset, 01 Docling preprocess, 02 agent, 03 visual page; `B0_evaluation.py` is the single-pass VLM baseline, not a stage); `02_agent_qa.py` runs the agent (full dataset or a selection), `03_visual_samples.py` builds the visual-samples page; `04_judge.py` rescores the saved answers of any batch or baseline folder with an LLM (no model rerun), `B1_mmlongbench_baseline.py` runs the document-in-the-prompt baselines |
 | `sample_sets/*.json` | named, exact lists of (doc_id, question) so an experiment is replicable |
 | `tests/` | pytest; `ci/` the check scripts |
 
@@ -122,6 +122,19 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
   single forced `FinalAnswer` is requested from the evidence so far.
 - Tests never touch the network: `AgentSettings.model_factory` injects `FunctionModel`
   (scripted tool calls) or `TestModel` (schema-valid dummies). See `tests/test_agent_tools.py`.
+
+## Scoring (step 6)
+
+- Without `--judge-model` the score is the rule-based port of the official scorer
+  (`agent/scoring.py`, `score_source: rules`).
+- With `--judge-model` (any OpenAI-compatible endpoint, `--judge-api-url` defaults to the agent's) the
+  LLM judge scores each final answer inside step 6: `result["score"]` is the judge's verdict
+  (`score_source: llm_judge`), `result["score_official_rule"]` keeps the rule-based score for audit, and
+  `result["judge"]` has the verdict, extracted answer and reason. If a judge call fails the run falls back
+  to the rule-based score and says `rules_fallback`. `--judge-mode extract` uses the official GPT-4o
+  extraction prompt followed by the rules instead (`agent/prompts/`, Apache-2.0 notice there).
+- Use a judge that is not the model being scored. `usage/04_judge.py` rescoring saved answers from older
+  runs without rerunning anything; the manifest, summary and visual page report `score`.
 
 ## Conventions
 

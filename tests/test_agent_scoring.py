@@ -39,3 +39,13 @@ def test_extract_answer_normalisation() -> None:
         == "Not answerable"
     )
     assert extract_answer("Not answerable") == "Not answerable"
+
+
+def test_extract_answer_keeps_the_period_of_abbreviations() -> None:
+    from pine.agent.scoring import eval_score, extract_answer
+
+    assert extract_answer("M.A.") == "M.A."
+    assert extract_answer("U.S.") == "U.S."
+    assert extract_answer("The answer is Paris.") == "Paris"
+    assert extract_answer("Final answer: 42.") == "42"
+    assert eval_score("M.A.", extract_answer("M.A."), "Str") == 1.0

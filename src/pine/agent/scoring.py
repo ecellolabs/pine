@@ -103,11 +103,12 @@ def extract_answer(prediction: str) -> str:
         re.IGNORECASE,
     ):
         return "Not answerable"
-    p = (
-        re.sub(r"^(the )?(answer|final answer)( is)?[:\s]+", "", p, flags=re.IGNORECASE)
-        .strip()
-        .rstrip(".")
-    )
+    p = re.sub(
+        r"^(the )?(answer|final answer)( is)?[:\s]+", "", p, flags=re.IGNORECASE
+    ).strip()
+    # drop a sentence-ending period, but keep the last one of an abbreviation (M.A., U.S.)
+    if not re.search(r"(?:^|[\s.])[A-Za-z]\.$", p):
+        p = p.rstrip(".")
     return p
 
 
@@ -175,6 +176,22 @@ def eval_score(gt: str, pred: str, answer_type: str) -> float:
     return 0.0
 
 
+def pick_score(
+    rules: float, judged: dict[str, Any] | None, mode: str
+) -> tuple[float, str]:
+    """The score a run is reported with, and where it came from.
+
+    With an LLM judge configured the judge's verdict (or the extraction + rules score) is the
+    score; the rule-based score is kept next to it for audit. If the judge call failed the
+    rule-based score is used and ``rules_fallback`` says so."""
+    if judged is not None and not judged.get("error"):
+        if mode in ("judge", "both") and judged.get("judge_score") is not None:
+            return float(judged["judge_score"]), "llm_judge"
+        if mode in ("extract", "both") and judged.get("extract_score") is not None:
+            return float(judged["extract_score"]), "llm_extraction+rules"
+    return rules, ("rules" if judged is None else "rules_fallback")
+
+
 def run_eval(
     run_meta: dict[str, Any],
     gold: dict[str, Any],
@@ -184,12 +201,15 @@ def run_eval(
     run_log: Path,
     cost: dict[str, Any],
     timings: dict[str, Any],
+    judged: dict[str, Any] | None = None,
+    judge_mode: str = "judge",
 ) -> dict[str, Any]:
     log = setup_logger("step6.eval", step_dir / "eval.log", run_log)
     step_dir.mkdir(parents=True, exist_ok=True)
     raw_pred = verification["final_answer"]
     extracted = extract_answer(raw_pred)
-    score = eval_score(gold["answer"], extracted, gold["answer_format"])
+    rule_score = eval_score(gold["answer"], extracted, gold["answer_format"])
+    score, score_source = pick_score(rule_score, judged, judge_mode)
     gold_pages = gold["evidence_pages"]
     cited = verification.get("cited_pages") or []
     pages_read = set(final.get("pages_read", [])) | {
@@ -204,7 +224,10 @@ def run_eval(
         "gold_evidence_sources": gold["evidence_sources"],
         "raw_system_answer": raw_pred,
         "extracted_answer": extracted,
-        "score_official_rule": score,
+        "score": score,
+        "score_source": score_source,
+        "score_official_rule": rule_score,
+        "judge": judged,
         "correct": score >= 0.999,
         "agent_status": final["status"],
         "verifier_decision": verification["decision"],
@@ -218,16 +241,22 @@ def run_eval(
         "tool_calls_total": timings.get("tool_calls_total"),
         "cost": cost,
         "timings_s": timings,
-        "scorer_note": "Official eval_score.py rules ported; GPT-4o answer extraction replaced by rule-based normalisation of the agent's concise answer.",
+        "scorer_note": (
+            "score = LLM judge when one is configured (score_source says which); "
+            "score_official_rule = official eval_score.py rules ported, with GPT-4o answer "
+            "extraction replaced by rule-based normalisation (kept for audit)."
+        ),
     }
     write_json(step_dir / "result.json", result)
     log.info(
-        "GOLD=%r (%s, pages %s) | PRED=%r -> score=%.2f correct=%s | cited=%s hit=%s | visited gold page=%s",
+        "GOLD=%r (%s, pages %s) | PRED=%r -> score=%.2f (%s; rules %.2f) correct=%s | cited=%s hit=%s | visited gold page=%s",
         gold["answer"],
         gold["answer_format"],
         gold_pages,
         extracted,
         score,
+        score_source,
+        rule_score,
         result["correct"],
         cited,
         result["cited_page_hit"],

@@ -304,6 +304,46 @@ def main() -> None:
         help="Seconds one model call may take (raise to ~1500 for thinking on a slow GPU).",
     )
     parser.add_argument(
+        "--judge-model",
+        default=None,
+        help=(
+            "Score answers with an LLM judge using this model (step 6). Without it the "
+            "rule-based scorer is the score. Prefer a model other than the one answering."
+        ),
+    )
+    parser.add_argument(
+        "--judge-api-url",
+        default=None,
+        help="OpenAI-compatible URL of the judge (default: --api-url, so one server can do both).",
+    )
+    parser.add_argument("--judge-api-key", default=None, help="Default: --api-key.")
+    parser.add_argument(
+        "--judge-mode",
+        choices=["judge", "extract", "both"],
+        default="judge",
+        help=(
+            "judge: the model compares the answer with the gold answer. extract: the official "
+            "extraction prompt, then the rule-based scorer. both: run both, judge is the score."
+        ),
+    )
+    parser.add_argument(
+        "--judge-disable-thinking",
+        action="store_true",
+        help="Send enable_thinking=false to the judge (Qwen3.x on vLLM).",
+    )
+    parser.add_argument(
+        "--judge-max-tokens",
+        type=int,
+        default=300,
+        help="Reply budget of the judge; use ~2000 for a reasoning judge (gpt-oss).",
+    )
+    parser.add_argument(
+        "--judge-extra-body",
+        type=json.loads,
+        default=None,
+        help='JSON of extra request fields for the judge, e.g. \'{"reasoning_effort": "low"}\'.',
+    )
+    parser.add_argument(
         "--presence-penalty",
         type=float,
         default=0.0,
@@ -379,7 +419,23 @@ def main() -> None:
         thinking_sampling=args.thinking_sampling,
         presence_penalty=args.presence_penalty,
         request_timeout_s=args.request_timeout,
+        judge_model=args.judge_model,
+        judge_api_url=args.judge_api_url,
+        judge_api_key=args.judge_api_key,
+        judge_mode=args.judge_mode,
+        judge_disable_thinking=args.judge_disable_thinking,
+        judge_max_tokens=args.judge_max_tokens,
+        judge_extra_body=args.judge_extra_body,
     )
+    if (
+        args.judge_model
+        and args.judge_model == args.text_model
+        and not args.judge_api_url
+    ):
+        logger.warning(
+            "the judge is the same model on the same server as the agent: a model grading its "
+            "own answers is biased. Point --judge-api-url/--judge-model at a different model."
+        )
     manifest: dict[str, Any] = {
         "batch": batch_dir.name,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -409,7 +465,9 @@ def main() -> None:
         if result is not None:
             entry.update(
                 status="ok",
-                score=result["score_official_rule"],
+                score=result["score"],
+                score_source=result["score_source"],
+                score_rules=result["score_official_rule"],
                 answer=result["raw_system_answer"],
             )
             results.append(result)
@@ -433,7 +491,8 @@ def main() -> None:
             for spec, result, error in run_doc(doc_specs, settings, shared_root):
                 record(spec, result, error)
 
-    scored = [r["score_official_rule"] for r in results]
+    scored = [r["score"] for r in results]
+    rule_scored = [r["score_official_rule"] for r in results]
     print("\n" + "=" * 70)
     print(f"AGENT QA RUNS  dataset={args.name}  {describe(resolved)}")
     print("=" * 70)
@@ -446,8 +505,17 @@ def main() -> None:
             print(f"  {entry['run_id']:<40} FAILED: {entry['error'][:80]}")
     if scored:
         print(
-            f"  mean official-rule score: {sum(scored) / len(scored):.3f} over {len(scored)} question(s)"
+            f"  mean score ({results[0]['score_source']}): {sum(scored) / len(scored):.3f} over {len(scored)} question(s)"
         )
+        if args.judge_model:
+            print(
+                f"  mean rule-based score (audit): {sum(rule_scored) / len(rule_scored):.3f}"
+            )
+            fell_back = sum(1 for r in results if r["score_source"] == "rules_fallback")
+            if fell_back:
+                print(
+                    f"  judge failed on {fell_back} question(s): those use the rule-based score"
+                )
     print(f"  total cost: ${sum(r['cost']['cost_usd'] for r in results):.4f}")
     print(f"  batch folder: {batch_dir.resolve()}")
     print("=" * 70)
