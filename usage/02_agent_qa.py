@@ -290,6 +290,26 @@ def main() -> None:
         help="Multiply every call's max_tokens (use ~6 for reasoning models, which spend the budget thinking).",
     )
     parser.add_argument(
+        "--thinking-sampling",
+        action="store_true",
+        help=(
+            "Use the Qwen3.5 thinking-mode sampling (temperature 0.6, top_p 0.95, top_k 20) "
+            "instead of greedy decoding. Needed when thinking is on: greedy makes it loop."
+        ),
+    )
+    parser.add_argument(
+        "--request-timeout",
+        type=float,
+        default=180.0,
+        help="Seconds one model call may take (raise to ~1500 for thinking on a slow GPU).",
+    )
+    parser.add_argument(
+        "--presence-penalty",
+        type=float,
+        default=0.0,
+        help="With --thinking-sampling: presence penalty (the model card allows 0 to 2).",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=1,
@@ -356,6 +376,9 @@ def main() -> None:
         rapidocr_backend=args.rapidocr_backend,
         reasoning=not args.no_reasoning,
         max_tokens_scale=args.max_tokens_scale,
+        thinking_sampling=args.thinking_sampling,
+        presence_penalty=args.presence_penalty,
+        request_timeout_s=args.request_timeout,
     )
     manifest: dict[str, Any] = {
         "batch": batch_dir.name,

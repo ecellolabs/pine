@@ -51,6 +51,14 @@ class AgentSettings:
     reasoning: bool = True
     # Multiplies every call's max_tokens; reasoning models need room to think before answering.
     max_tokens_scale: float = 1.0
+    # True replaces every call's greedy decoding with the Qwen3.5 model card's thinking-mode
+    # sampling (temperature 0.6, top_p 0.95, top_k 20): greedy decoding makes a thinking model
+    # loop on itself until the token budget runs out. Off by default so old runs and caches
+    # are unchanged.
+    thinking_sampling: bool = False
+    presence_penalty: float = 0.0
+    # Seconds a single model call may take; thinking calls on a slow GPU need far more than 180.
+    request_timeout_s: float = 180.0
     # Optional factory returning a Pydantic AI ``Model`` for a model name; used by
     # tests (FunctionModel / TestModel) and by anyone who wants a custom provider.
     model_factory: Callable[[str], Model] | None = None
@@ -73,6 +81,9 @@ class AgentSettings:
             "rapidocr_backend": self.rapidocr_backend,
             "reasoning": self.reasoning,
             "max_tokens_scale": self.max_tokens_scale,
+            "thinking_sampling": self.thinking_sampling,
+            "presence_penalty": self.presence_penalty,
+            "request_timeout_s": self.request_timeout_s,
             "llm_cache_dir": str(self.llm_cache_dir),
             "agent_framework": "pydantic-ai",
         }

@@ -18,6 +18,7 @@ Folder layout produced for every sample (``<output_dir>/<run_id>/``)::
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import time
 from dataclasses import asdict, dataclass, field
@@ -225,7 +226,12 @@ def run_sample(
     for p in gold.get("evidence_pages", []):
         out = d0 / f"gold_evidence_page_{p:03d}.jpg"
         if not out.exists():
-            out.write_bytes(render_page(spec.pdf_path, p, max_side=1024))
+            try:
+                out.write_bytes(render_page(spec.pdf_path, p, max_side=1024))
+            except Exception as exc:  # noqa: BLE001 - annotation may cite a page the PDF lacks
+                logging.getLogger("run").warning(
+                    "gold evidence page %s cannot be rendered: %s", p, exc
+                )
     log.info("DRIVER %s | output=%s", redacted_argv() or "<library call>", run_dir)
     log.info(
         "RUN %s | doc=%s | Q=%r | gold=%r (%s) pages=%s",

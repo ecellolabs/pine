@@ -110,10 +110,16 @@ def _parse_via_api(
                 }
             except Exception as exc:  # noqa: BLE001
                 log.error("docling API failed page=%d: %s", p, exc)
-                pages[p] = {"md": "", "tables": 0, "pictures": 0}
+                pages[p] = {"md": "", "tables": 0, "pictures": 0, "failed": True}
                 status = "PARTIAL_SUCCESS"
     elapsed = time.perf_counter() - t0
     log.info("docling API status=%s elapsed=%.1fs", status, elapsed)
+    failed_pages = [p for p, info in pages.items() if info.get("failed")]
+    if failed_pages:
+        # never cache a document with holes: the question fails and is redone on resume
+        raise RuntimeError(
+            f"Docling API failed on {len(failed_pages)} page(s) after retries: {failed_pages[:10]}"
+        )
     return pages, status, elapsed, None
 
 

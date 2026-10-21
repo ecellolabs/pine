@@ -160,8 +160,12 @@ def test_docling_transform_call_with_page() -> None:
     assert doc.name == "page_1"
 
 
-def test_docling_transform_http_error() -> None:
+def test_docling_transform_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pine.parsers.docling.time.sleep", lambda _s: None)
+    calls = []
+
     def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
         return httpx.Response(500, text="Internal Server Error during OCR")
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -171,6 +175,27 @@ def test_docling_transform_http_error() -> None:
         DoclingApiError, match="Docling API request failed with status 500"
     ):
         transform.convert_bytes(b"dummy bytes")
+    assert len(calls) == 6  # a 5xx is retried before giving up
+
+
+def test_docling_transform_retries_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pine.parsers.docling.time.sleep", lambda _s: None)
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            raise httpx.RemoteProtocolError("Server disconnected", request=request)
+        return httpx.Response(200, json={"schema_name": "bogus"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    transform = DoclingTransform(api_url=MOCK_API_URL, client=client)
+    with pytest.raises(DoclingApiError) as err:
+        transform.convert_bytes(b"dummy bytes")
+    assert len(calls) == 3  # two dropped connections were retried, third got a reply
+    assert "connection error" not in str(err.value)
 
 
 def test_docling_transform_missing_json_content() -> None:

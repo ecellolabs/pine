@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Self
 
@@ -14,6 +15,8 @@ import httpx
 from atria_core.types import SinglePageDocumentInstance
 from docling_core.types.doc.document import DoclingDocument
 from pydantic import BaseModel, ConfigDict, Field
+
+_MAX_ATTEMPTS = 6  # backoff 5, 10, 20, 40, 60 s between tries
 
 
 class DoclingApiError(RuntimeError):
@@ -77,7 +80,7 @@ class DoclingTransform:
     api_url: str = field(default_factory=lambda: os.getenv("DOCLING_API_URL", ""))
     options: DoclingApiOptions = field(default_factory=DoclingApiOptions)
     pipeline_options: Any = None
-    timeout: float = 120.0
+    timeout: float = 300.0
     client: httpx.Client | None = field(default=None, repr=False)
     _owns_client: bool = field(init=False, default=True, repr=False)
 
@@ -120,17 +123,25 @@ class DoclingTransform:
         }
         data = self.options.to_form_data()
 
-        try:
-            response = self.client.post(url, files=files, data=data)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise DoclingApiError(
-                f"Docling API request failed with status {exc.response.status_code}: {exc.response.text}"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise DoclingApiError(
-                f"Docling API request connection error to {url}: {exc}"
-            ) from exc
+        response = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = self.client.post(url, files=files, data=data)
+                response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as exc:
+                # a recycled or overloaded server answers 5xx: retry; 4xx is the caller's fault
+                if exc.response.status_code < 500 or attempt == _MAX_ATTEMPTS - 1:
+                    raise DoclingApiError(
+                        f"Docling API request failed with status {exc.response.status_code}: {exc.response.text}"
+                    ) from exc
+            except httpx.RequestError as exc:
+                if attempt == _MAX_ATTEMPTS - 1:
+                    raise DoclingApiError(
+                        f"Docling API request connection error to {url}: {exc}"
+                    ) from exc
+            time.sleep(min(5 * 2**attempt, 60))
+        assert response is not None
 
         raw = response.json()
         # Case 1: Server directly returns a DoclingDocument

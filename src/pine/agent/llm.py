@@ -40,7 +40,6 @@ _PARAMS_ADAPTER: TypeAdapter[ModelRequestParameters] = TypeAdapter(
     ModelRequestParameters
 )
 # a dropped connection must fail (and be retried) instead of hanging the batch
-REQUEST_TIMEOUT_S = 180
 _VOLATILE_KEYS = {"timestamp", "run_id", "conversation_id", "metadata", "state"}
 
 
@@ -69,7 +68,7 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
         from pydantic_ai.providers.openrouter import OpenRouterProvider
 
         or_settings = OpenRouterModelSettings(
-            openrouter_usage={"include": True}, timeout=REQUEST_TIMEOUT_S
+            openrouter_usage={"include": True}, timeout=settings.request_timeout_s
         )
         if not settings.reasoning:
             or_settings["openrouter_reasoning"] = {"enabled": False}
@@ -91,7 +90,7 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
         ) -> bool:
             return False
 
-    vllm_settings = ModelSettings(timeout=REQUEST_TIMEOUT_S)
+    vllm_settings = ModelSettings(timeout=settings.request_timeout_s)
     if not settings.reasoning:
         # Qwen3.x chat template switch: answer directly instead of thinking first
         vllm_settings["extra_body"] = {
@@ -102,6 +101,23 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
         provider=OpenAIProvider(base_url=api_url, api_key=api_key or "dummy"),
         settings=vllm_settings,
     )
+
+
+def apply_thinking_sampling(
+    model_settings: ModelSettings | None, settings: AgentSettings
+) -> ModelSettings | None:
+    """Swap greedy decoding for the model card's thinking-mode sampling, when enabled."""
+    if not settings.thinking_sampling or model_settings is None:
+        return model_settings
+    out = dict(model_settings)
+    out["temperature"] = 0.6
+    out["top_p"] = 0.95
+    if settings.presence_penalty:
+        out["presence_penalty"] = settings.presence_penalty
+    extra = dict(out.get("extra_body") or {})  # type: ignore[call-overload]
+    extra["top_k"] = 20
+    out["extra_body"] = extra
+    return cast(ModelSettings, out)
 
 
 def _strip_volatile(obj: Any) -> Any:
@@ -298,6 +314,7 @@ class TracedModel(WrapperModel):
             trimmed = dict(model_settings)
             del trimmed["temperature"]
             model_settings = cast(ModelSettings, trimmed)
+        model_settings = apply_thinking_sampling(model_settings, self.run_settings)
         scale = self.run_settings.max_tokens_scale
         if scale != 1.0 and model_settings and model_settings.get("max_tokens"):
             model_settings = ModelSettings(
