@@ -45,7 +45,9 @@ def main() -> None:
     p.add_argument("--api-url", default=os.getenv("JUDGE_API_URL", ""))
     p.add_argument(
         "--api-key",
-        default=os.getenv("JUDGE_API_KEY") or os.getenv("OPENROUTER_API_KEY", ""),
+        default=None,
+        help="Default: $JUDGE_API_KEY, else $OPENROUTER_API_KEY; a claude-* judge reads "
+        "$ANTHROPIC_API_KEY instead of the OpenRouter key.",
     )
     p.add_argument("--model", required=True, help="Judge model name on that endpoint.")
     p.add_argument("--mode", choices=["extract", "judge", "both"], default="both")
@@ -79,7 +81,12 @@ def main() -> None:
     )
     args = p.parse_args()
 
-    if not args.api_url:
+    claude = args.model.startswith("claude-")
+    if args.api_key is None:
+        args.api_key = os.getenv("JUDGE_API_KEY") or (
+            "" if claude else os.getenv("OPENROUTER_API_KEY", "")
+        )
+    if not args.api_url and not claude:
         sys.exit("Pass --api-url (or set JUDGE_API_URL).")
     items = load_items(args.source)
     if not items:
