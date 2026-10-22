@@ -5,9 +5,23 @@ validation errors, so downstream code only ever sees well-formed data."""
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, get_origin
+from typing import Annotated, Any, Literal, get_origin
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
+
+
+def _as_text(value: Any) -> Any:
+    """Models send a List answer as a JSON array and a number as a number where the schema
+    says string; the text form is what downstream code (scorer, quote check) reads."""
+    if isinstance(value, (list, tuple)):
+        return json.dumps([str(v) for v in value], ensure_ascii=False)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return value
+
+
+# a free-text model field: the JSON schema still says "string"
+Text = Annotated[str, BeforeValidator(_as_text)]
 
 
 class ToolArgs(BaseModel):
@@ -115,7 +129,7 @@ class FinalAnswer(ToolArgs):
     """The orchestrator's final output (emitted through the final_answer tool)."""
 
     status: Literal["answered", "not_answerable"]
-    answer: str = Field(
+    answer: Text = Field(
         description=(
             "Concise answer only (number, short string, or list). For "
             "not_answerable write 'Not answerable'."
@@ -134,6 +148,40 @@ class FinalAnswer(ToolArgs):
     reasoning: str = ""
 
 
+class NoteRef(ToolArgs):
+    """One note the answer rests on."""
+
+    note: int = Field(description="Note number, e.g. 2 for [note 2]")
+    quote: Text = Field(
+        default="",
+        description="Short phrase copied exactly from that note that supports the answer",
+    )
+
+
+class Decision(ToolArgs):
+    """The procedural navigator's one decision after the candidate pages were read."""
+
+    action: Literal["answer", "search", "abstain"] = Field(
+        description=(
+            "answer: the notes contain the answer; search: other pages may hold it; "
+            "abstain: the notes show the document does not contain it"
+        )
+    )
+    answer: Text = Field(
+        default="",
+        description="Concise answer only (number, short string, or list); empty unless action is answer",
+    )
+    evidence: list[NoteRef] = Field(
+        default_factory=list,
+        description="The notes the answer rests on (required when action is answer)",
+    )
+    search_queries: list[str] = Field(
+        default_factory=list,
+        description="2-4 short keyword queries for other pages (action search)",
+    )
+    reasoning: Text = ""
+
+
 class Verdict(ToolArgs):
     """Verifier output."""
 
@@ -145,4 +193,12 @@ class Verdict(ToolArgs):
     gaps: list[str] = Field(
         default_factory=list,
         description="What is still missing or what should be checked (sections/pages/figures)",
+    )
+    check_pages: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Up to 3 pages from the index view, not read yet, that may hold missing or "
+            "contradicting evidence (always consider for an abstention and for a list or "
+            "count answer)"
+        ),
     )
