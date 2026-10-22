@@ -123,6 +123,25 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
 - Tests never touch the network: `AgentSettings.model_factory` injects `FunctionModel`
   (scripted tool calls) or `TestModel` (schema-valid dummies). See `tests/test_agent_tools.py`.
 
+## Navigator and verifier (current design)
+
+- **Procedural navigator (default, `--navigator procedural`)**: code reads the plan's anchor pages
+  (forced and carried-over pages first, topped up to 6 with the locator's next ranked pages) and decides
+  which pages get a vision reading (no text, referenced figure, image-led page, or visual page when the plan
+  expects visual evidence; 4 slots, in locator order). Each reading is a numbered note; one typed `decide`
+  call answers, searches once, or abstains, citing notes by number. The ledger is built in code from the
+  cited notes with their source. `--navigator agentic` keeps the free tool loop.
+- **Verifier**: code checks run first and are shown to the LLM verdict: quotes against the cited note's
+  source, `numeric_check`, and for image-only evidence a text-layer check, else a blind re-read of a crop of
+  the page's figures (question only; PARTIAL allowed for multi-page answers). A disputed reading rejects the
+  answer. `check_pages` (typed) plus coverage pages (abstentions, list/count answers) become the next round's
+  first anchors; a re-plan happens only when a gap names a page not yet covered.
+- **Runner**: carries the previous round's cited pages forward; keeps an accepted answer if a coverage round
+  does not improve on it (not if that round reached the same answer and had it rejected).
+- OpenRouter + qwen3.5 with `--no-reasoning`: pass `--ignore-provider Together` (it rejects reasoning-off
+  plus a required tool call). A `claude-*` judge uses the Anthropic SDK and reads `ANTHROPIC_API_KEY`.
+- Sample sets: `s3` is ten questions on ten documents unused by `s0`/`s2`, for testing changes on unseen data.
+
 ## Scoring (step 6)
 
 - Without `--judge-model` the score is the rule-based port of the official scorer
