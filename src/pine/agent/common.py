@@ -4,11 +4,13 @@ page rendering and the cost ledger.  Model access lives in
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
 import sys
-from collections.abc import Callable
+import warnings
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -44,11 +46,19 @@ class AgentSettings:
     vision_model: str = DEFAULT_VISION_MODEL
     max_rounds: int = 2
     max_tool_calls: int = 12
+    # "procedural": read the plan's anchor pages in code, then one typed decision (default);
+    # "agentic": the navigator picks its own tool calls (the original design)
+    navigator: str = "procedural"
+    # index page summaries in flight at once (one OpenRouter / vLLM request each)
+    index_concurrency: int = 8
     cache_dir: Path | None = None
     docling_url: str | None = None
     rapidocr_backend: str = "torch"
     # False sends OpenRouter ``reasoning: {enabled: false}`` (hybrid-thinking models).
     reasoning: bool = True
+    # OpenRouter providers never to route to (e.g. Together rejects qwen3.5 with reasoning
+    # off and a required tool call). Empty keeps OpenRouter's default routing.
+    openrouter_ignore_providers: list[str] = field(default_factory=list)
     # Multiplies every call's max_tokens; reasoning models need room to think before answering.
     max_tokens_scale: float = 1.0
     # True replaces every call's greedy decoding with the Qwen3.5 model card's thinking-mode
@@ -89,9 +99,12 @@ class AgentSettings:
             "vision_model": self.vision_model,
             "max_rounds": self.max_rounds,
             "max_tool_calls": self.max_tool_calls,
+            "navigator": self.navigator,
+            "index_concurrency": self.index_concurrency,
             "docling_url": self.docling_url,
             "rapidocr_backend": self.rapidocr_backend,
             "reasoning": self.reasoning,
+            "openrouter_ignore_providers": self.openrouter_ignore_providers,
             "max_tokens_scale": self.max_tokens_scale,
             "thinking_sampling": self.thinking_sampling,
             "presence_penalty": self.presence_penalty,
@@ -188,17 +201,28 @@ def append_jsonl(path: Path, record: Any) -> None:
 
 # --------------------------------------------------------------------------- page images
 def render_page(
-    pdf_path: Path, page_no: int, max_side: int = 1024, quality: int = 80
+    pdf_path: Path,
+    page_no: int,
+    max_side: int = 1024,
+    quality: int = 80,
+    clip: tuple[float, float, float, float] | None = None,
 ) -> bytes:
-    """Render a 1-indexed page to JPEG bytes with the longest side <= max_side."""
+    """Render a 1-indexed page to JPEG bytes with the longest side <= max_side.
+
+    ``clip`` (x0, y0, x1, y1 in PDF points, origin top-left) renders only that region,
+    so a figure gets the whole pixel budget."""
     import pymupdf
     from PIL import Image
 
     doc = pymupdf.open(pdf_path)
     page = doc[page_no - 1]
-    rect = page.rect
+    rect = page.rect if clip is None else pymupdf.Rect(*clip) & page.rect
     scale = max_side / max(rect.width, rect.height)
-    pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+    pix = page.get_pixmap(
+        matrix=pymupdf.Matrix(scale, scale),
+        alpha=False,
+        clip=None if clip is None else rect,
+    )
     img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
@@ -238,7 +262,26 @@ class CostLedger:
         }
 
 
-_SECRET_FLAGS = ("--api-key", "--vision-api-key")
+def run_on_thread_loop[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Run ``coro`` on this thread's persistent event loop, the one ``Agent.run_sync`` uses.
+
+    ``asyncio.run`` closes its loop when done, which strands the pooled connections of the
+    shared provider HTTP client: the next ``run_sync`` then fails with "Event loop is closed"."""
+    try:
+        with (
+            warnings.catch_warnings()
+        ):  # "no current event loop" is the case handled here
+            warnings.simplefilter("ignore", DeprecationWarning)
+            loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+
+_SECRET_FLAGS = ("--api-key", "--vision-api-key", "--judge-api-key")
 
 
 def redacted_argv(argv: list[str] | None = None) -> str:
