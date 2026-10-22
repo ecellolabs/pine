@@ -301,7 +301,11 @@ def _prompted_stub(messages: list[ModelMessage], info: AgentInfo) -> ModelRespon
 
 def _settings(tmp_path: Path, factory: Any) -> AgentSettings:
     return AgentSettings(
-        output_dir=tmp_path, api_key="test", model_factory=factory, max_tool_calls=6
+        output_dir=tmp_path,
+        api_key="test",
+        model_factory=factory,
+        max_tool_calls=6,
+        navigator="agentic",
     )
 
 
@@ -405,6 +409,7 @@ def test_budget_exhaustion_forces_final(tmp_path: Path) -> None:
         api_key="t",
         model_factory=lambda name: FunctionModel(looping, model_name=name),
         max_tool_calls=3,
+        navigator="agentic",
     )
     final = run_orchestrator(
         settings,
@@ -889,3 +894,186 @@ def test_api_keys_are_masked_in_logged_command() -> None:
     )
     assert "sk-secret" not in cmd and "sk-other" not in cmd
     assert cmd == "02_agent_qa.py --api-key *** --vision-api-key=*** --x 1"
+
+
+def test_final_answer_accepts_list_and_number_answers() -> None:
+    from pine.agent.schemas import FinalAnswer
+
+    as_list = FinalAnswer(status="answered", answer=["7", "5", 2])  # type: ignore[arg-type]
+    as_int = FinalAnswer(status="answered", answer=5)  # type: ignore[arg-type]
+    assert json.loads(as_list.answer) == ["7", "5", "2"] and as_int.answer == "5"
+
+
+def test_answer_numbers_must_follow_from_the_quotes() -> None:
+    from pine.agent.verifier import numeric_check
+
+    quotes = ["Foreign Companies: 32.17%, Foreign Institutional Investors: 12.79%"]
+    assert numeric_check("54.96", quotes)["status"] == "mismatch"
+    assert numeric_check("44.96%", quotes)["status"] == "ok"
+    assert numeric_check("32%", ["Hispanic | 16", "White | 16"])["status"] == "ok"
+    # a count of listed items cannot be checked against the quote's numbers
+    assert (
+        numeric_check("7", ["- Eusoff Hall\n- Raffles Hall"])["status"] == "unchecked"
+    )
+
+
+def test_rejoined_list_quote_is_found_piece_by_piece() -> None:
+    from pine.agent.verifier import quote_on_page
+
+    page = "Metrics\n- Followers\n- Tweet Clicks\n- Video Views"
+    assert quote_on_page("Followers, Tweet Clicks, Video Views", page)[0]
+    assert not quote_on_page("Followers, Tweet Clicks, Engagement Rate", page)[0]
+
+
+def test_procedural_navigator_reads_anchors_and_cites_notes(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    parser_dir, _ = _write_parsed_doc(run_dir)
+    index = json.loads((run_dir / "02_index" / "index.json").read_text())
+
+    def decide(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        # the answer cites note 1 (page 2) with a phrase that is not on the page
+        args = {
+            "action": "answer",
+            "answer": "National Atmospheric Research Laboratory",
+            "evidence": [{"note": 1, "quote": "NARL is in Delhi"}, {"note": 9}],
+        }
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
+
+    settings = AgentSettings(
+        output_dir=tmp_path,
+        api_key="test",
+        model_factory=lambda name: FunctionModel(decide, model_name=name),
+    )
+    plan = {
+        "anchor_pages": [2],
+        "needs_visual_inspection": False,
+        "sub_goals": ["NARL"],
+    }
+    final = run_orchestrator(
+        settings,
+        "What is NARL?",
+        run_dir / "doc.pdf",
+        index,
+        plan,
+        parser_dir,
+        run_dir / "04_orchestrator",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+    )
+    assert final["status"] == "answered" and final["pages_read"] == [2]
+    assert final["evidence_pages"] == [2] and final["anomalies"] == []
+    # the unknown note 9 is dropped; the invented phrase is replaced by the note's text
+    [entry] = final["ledger"]
+    assert entry["source"] == "page_text" and entry["quote"] in PAGE2
+
+
+def test_replan_needs_a_page_not_yet_covered() -> None:
+    from pine.agent.verifier import replan_has_new_target
+
+    assert replan_has_new_target(["inspect the chart on page 15"], {15}, set(), 21)
+    assert not replan_has_new_target(["inspect the chart on page 15"], {15}, {15}, 21)
+    assert not replan_has_new_target(["Verify the exact spelling"], {1}, set(), 21)
+    assert decide("answered", "not_supported", True, True, 1, 2, False) == "ABSTAIN"
+
+
+def test_vision_readings_are_checked_against_text_and_a_blind_reread() -> None:
+    from pine.agent.verifier import compare_reread, text_corroboration
+
+    page = (
+        "Categories of Shareholders " + "x " * 120 + "Foreign Companies 32.17 FII 12.79"
+    )
+    quote = "Foreign Companies held 32.17%, Foreign Institutional Investors 12.79%"
+    # a sum of two values that stand in the page text is confirmed without a model call
+    assert text_corroboration("44.96", quote, page)["status"] == "confirmed"
+    assert text_corroboration("54.96", quote, page)["status"] == "not_in_text"
+    # a page holding one part of a multi-page answer is judged on its own values
+    part = "Hispanic: 16%\nWhite, Non-Hispanic: 16%\nANSWER: PARTIAL"
+    assert compare_reread("32", "Hispanic 16%, White 16%", part, True)[0] == "confirmed"
+    # a year in the first reading's quote is not a value the second must repeat
+    part18 = "Democrats: 31%\nANSWER: PARTIAL"
+    assert (
+        compare_reread("31", "In 2018, Democrats were 31%", part18, True)[0]
+        == "confirmed"
+    )
+    # a single-page answer the second reading contradicts or cannot see is disputed
+    assert (
+        compare_reread("4", "four steps", "1. a\n2. b\nANSWER: 5", False)[0]
+        == "disputed"
+    )
+    assert (
+        compare_reread("blue", "node is blue", "ANSWER: NOT_SHOWN", False)[0]
+        == "disputed"
+    )
+
+
+def test_list_answer_gets_a_coverage_round_on_the_next_page(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    parser_dir, _ = _write_parsed_doc(run_dir)
+    index = json.loads((run_dir / "02_index" / "index.json").read_text())
+    quote = "National Atmospheric Research Laboratory (NARL)"
+    final = {
+        "status": "answered",
+        "answer": '["NARL"]',
+        "evidence_pages": [2],
+        "ledger": [
+            {"page": 2, "quote": quote, "candidate_answer": "x", "source": "page_text"}
+        ],
+        "pages_read": [2],
+        "image_inspections": [],
+        "tool_calls_used": 1,
+    }
+    settings = _settings(
+        tmp_path, lambda name: FunctionModel(_prompted_stub, model_name=name)
+    )
+    v = run_verifier(
+        settings,
+        "Which labs?",
+        final,
+        parser_dir,
+        index,
+        run_dir / "05_evidence_verifier",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+        1,
+        2,
+    )
+    assert v["decision_before_coverage"] == "ACCEPT" and v["decision"] == "REPLAN"
+    assert v["coverage_pages"] == [1] and v["check_pages"] == [1]
+
+
+def test_vision_evidence_is_not_relabelled_as_page_text(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    parser_dir, _ = _write_parsed_doc(run_dir)
+    index = json.loads((run_dir / "02_index" / "index.json").read_text())
+    # the phrase stands in the page text, but the cited note was a vision reading
+    entry = {
+        "page": 2,
+        "quote": "NARL",
+        "candidate_answer": "x",
+        "source": "image_inspection",
+    }
+    final = {
+        "status": "answered",
+        "answer": "x",
+        "evidence_pages": [2],
+        "ledger": [entry],
+        "pages_read": [2],
+        "image_inspections": [{"page": 2, "result": "a chart of rainfall"}],
+        "tool_calls_used": 2,
+    }
+    settings = _settings(
+        tmp_path, lambda name: FunctionModel(_prompted_stub, model_name=name)
+    )
+    v = run_verifier(
+        settings,
+        "q",
+        final,
+        parser_dir,
+        index,
+        run_dir / "05_evidence_verifier",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+        2,
+        2,
+    )
+    assert v["quote_checks"][0]["source"] is None
