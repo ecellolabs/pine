@@ -316,6 +316,47 @@ def write_flips(records: list[dict[str, Any]], path: Path, limit: int = 40) -> N
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+# models that take the server-side refusal fallback (``fallbacks: "default"``)
+_CLAUDE_FALLBACK_MODELS = (
+    "claude-opus-5-5",
+    "claude-opus-5",
+    "claude-fable-5-1",
+    "claude-sonnet-5-5",
+)
+
+
+def _claude_judge_chat(
+    model: str, api_key: str, timeout: float, max_tokens: int
+) -> JudgeChat:
+    """Claude through the Anthropic SDK. Current Claude models think adaptively and reject
+    sampling parameters, so the judge sets low effort instead of a temperature and leaves
+    room for the thinking in ``max_tokens``. An empty ``api_key`` reads ANTHROPIC_API_KEY."""
+    import anthropic
+
+    client = anthropic.Anthropic(
+        api_key=api_key or None, timeout=timeout, max_retries=3
+    )
+    extra: dict[str, Any] = {}
+    if model in _CLAUDE_FALLBACK_MODELS:
+        # on a policy decline the API re-runs the request on a fallback model
+        extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+
+    def chat(prompt: str) -> tuple[str, int, int]:
+        resp = client.beta.messages.create(
+            model=model,
+            max_tokens=max(max_tokens, 4000),
+            output_config={"effort": "low"},
+            messages=[{"role": "user", "content": prompt}],
+            **extra,
+        )
+        if resp.stop_reason == "refusal":
+            raise RuntimeError(f"judge declined the request: {resp.stop_details}")
+        text = "".join(getattr(b, "text", "") for b in resp.content if b.type == "text")
+        return text.strip(), resp.usage.input_tokens, resp.usage.output_tokens
+
+    return chat
+
+
 def make_judge_chat(
     api_url: str,
     api_key: str,
@@ -325,11 +366,14 @@ def make_judge_chat(
     max_tokens: int = 300,
     extra_body: dict[str, Any] | None = None,
 ) -> JudgeChat:
-    """An OpenAI-compatible chat call at temperature 0 (any hosted API or a vLLM server).
+    """An OpenAI-compatible chat call at temperature 0 (any hosted API or a vLLM server),
+    or the Anthropic API for a ``claude-*`` model (``api_url`` is then ignored).
 
     ``extra_body`` passes server-specific fields, for example ``{"reasoning_effort": "low"}``
     for gpt-oss or ``{"chat_template_kwargs": {...}}``; a reasoning judge also needs a larger
     ``max_tokens``, because its thinking is counted before the verdict."""
+    if model.startswith("claude-"):
+        return _claude_judge_chat(model, api_key, timeout, max_tokens)
     from openai import OpenAI
 
     client = OpenAI(
