@@ -308,7 +308,7 @@ def test_baseline_run_one_uses_the_judge(tmp_path: Path) -> None:
         10,
         5,
         "stop",
-    )  # noqa: E731
+    )
     settings = BaselineSettings(
         mode="all",
         modality="text",

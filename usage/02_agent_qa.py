@@ -158,7 +158,7 @@ def run_doc(
                 continue
             result = run_sample(spec, settings, shared_root / spec.pdf_path.stem)
             out.append((spec, result, None))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception(f"run {spec.run_id} failed")
             out.append((spec, None, str(exc)))
     return out
