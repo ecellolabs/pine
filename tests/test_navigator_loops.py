@@ -41,6 +41,7 @@ def test_batch_read_pages_and_inline_final_answer(tmp_path: Path) -> None:
     settings = AgentSettings(
         output_dir=tmp_path,
         api_key="test",
+        navigator="agentic",
         model_factory=lambda name: FunctionModel(
             _streamlined_scripted_navigator, model_name=name
         ),
@@ -118,6 +119,7 @@ def test_zero_call_abstention_bounced(tmp_path: Path) -> None:
     settings = AgentSettings(
         output_dir=tmp_path,
         api_key="test",
+        navigator="agentic",
         model_factory=lambda name: FunctionModel(
             _zero_call_abstain_scripted_navigator, model_name=name
         ),
@@ -200,6 +202,7 @@ def test_uninspected_figure_abstention_bounced(tmp_path: Path) -> None:
     settings = AgentSettings(
         output_dir=tmp_path,
         api_key="test",
+        navigator="agentic",
         model_factory=lambda name: FunctionModel(
             _figure_uninspected_scripted_navigator, model_name=name
         ),

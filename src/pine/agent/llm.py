@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, cast
 
@@ -40,6 +41,9 @@ _PARAMS_ADAPTER: TypeAdapter[ModelRequestParameters] = TypeAdapter(
     ModelRequestParameters
 )
 # a dropped connection must fail (and be retried) instead of hanging the batch
+# per-task purpose for calls one TracedModel makes concurrently (index page summaries);
+# overrides ``TracedModel.purpose`` inside the task that sets it
+CALL_PURPOSE: ContextVar[str | None] = ContextVar("call_purpose", default=None)
 _VOLATILE_KEYS = {"timestamp", "run_id", "conversation_id", "metadata", "state"}
 
 
@@ -72,6 +76,10 @@ def base_model(settings: AgentSettings, model_name: str) -> Model:
         )
         if not settings.reasoning:
             or_settings["openrouter_reasoning"] = {"enabled": False}
+        if settings.openrouter_ignore_providers:
+            or_settings["openrouter_provider"] = {
+                "ignore": list(settings.openrouter_ignore_providers)
+            }
         return OpenRouterModel(
             model_name,
             provider=OpenRouterProvider(api_key=api_key),
@@ -345,13 +353,14 @@ class TracedModel(WrapperModel):
         latency = time.perf_counter() - t0
         usage = response_usage(response) if response else {}
         self.ledger.add(usage, latency, from_cache)
+        purpose = CALL_PURPOSE.get() or self.purpose
         all_tools = list(model_request_parameters.function_tools) + list(
             model_request_parameters.output_tools
         )
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "step": self.step_name,
-            "purpose": self.purpose,
+            "purpose": purpose,
             "round": self.round_no,
             "model": self.wrapped.model_name,
             "from_cache": from_cache,
@@ -373,7 +382,7 @@ class TracedModel(WrapperModel):
         append_jsonl(self.run_trace_path, record)
         self.logger.info(
             "LLM[%s] %s cache=%s tokens=%s/%s cost=$%s latency=%.1fs finish=%s%s",
-            self.purpose,
+            purpose,
             self.wrapped.model_name,
             from_cache,
             usage.get("prompt_tokens"),

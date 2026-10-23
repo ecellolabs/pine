@@ -163,7 +163,13 @@ def _summary_md(
         "## Verifier",
         "",
         f"- LLM verdict: {verdict.get('verdict')} — {verdict.get('explanation')}",
-        f"- Quote checks: {[(q['page'], q['source'], q['sim_page_text']) for q in verification['quote_checks']]}",
+        f"- Quote checks: {[(q['page'], q['source'], q['similarity']) for q in verification['quote_checks']]}",
+        f"- Code checks: numeric={verification['numeric_check']['status']} vision={[(c['page'], c['status']) for c in verification.get('vision_checks', [])]} check_pages={verification.get('check_pages', [])}"
+        + (
+            f" (kept round {verification['round']} after round {verification['fallback_from_round']})"
+            if verification.get("fallback_from_round")
+            else ""
+        ),
         f"- Gaps: {verification['gaps']}",
         "",
     ]
@@ -197,9 +203,11 @@ def judge_final_answer(
     """Step 6 judging: the LLM scores the final answer, or None when no judge is configured."""
     if not settings.judge_model:
         return None
+    claude = settings.judge_model.startswith("claude-")
     chat = settings.judge_chat or make_judge_chat(
         settings.judge_api_url or settings.api_url,
-        settings.judge_api_key or settings.api_key,
+        # a Claude judge must not receive the agent's key; empty reads ANTHROPIC_API_KEY
+        settings.judge_api_key or ("" if claude else settings.api_key),
         settings.judge_model,
         settings.request_timeout_s,
         settings.judge_disable_thinking,
@@ -313,6 +321,9 @@ def run_sample(
     prior: dict[str, Any] | None = None
     final: dict[str, Any] = {}
     verification: dict[str, Any] = {}
+    force_pages: list[int] = []
+    # an answer accepted before a coverage round, kept in case that round does worse
+    fallback: tuple[dict[str, Any], dict[str, Any]] | None = None
     tool_calls_total = 0
     t_loop = time.perf_counter()
     for round_no in range(1, settings.max_rounds + 1):
@@ -328,6 +339,7 @@ def run_sample(
             gaps=gaps,
             parser_dir=run_dir / STEP_DIRS[1],
             prior=prior,
+            force_pages=force_pages,
         )
         final = run_orchestrator(
             settings,
@@ -354,9 +366,23 @@ def run_sample(
             ledger,
             round_no=round_no,
             max_rounds=settings.max_rounds,
+            pdf_path=spec.pdf_path,
+            previous=verification or None,
         )
         if verification["decision"] != "REPLAN":
             break
+        if final["status"] == "answered" and verification.get(
+            "decision_before_coverage"
+        ) in ("ACCEPT", "ACCEPT_WEAK_GROUNDING"):
+            fallback = (final, verification)
+        # the pages the verifier asked for, then this round's evidence pages, so evidence
+        # spread over pages stays together in the next round
+        force_pages = list(
+            dict.fromkeys(
+                verification.get("check_pages", [])
+                + verification.get("cited_pages", [])
+            )
+        )
         gaps = verification["gaps"]
         prior = {
             "candidate_sections": plan.get("candidate_sections"),
@@ -370,9 +396,40 @@ def run_sample(
             + " Gaps: "
             + "; ".join(gaps)
         )
+    accepted = verification.get("decision") in ("ACCEPT", "ACCEPT_WEAK_GROUNDING")
+    # a later round that reached the same answer and had it rejected is evidence against it
+    rejected_again = (
+        fallback is not None
+        and final["status"] == "answered"
+        and not accepted
+        and final["answer"].strip().lower() == fallback[0]["answer"].strip().lower()
+    )
+    if fallback is not None and rejected_again:
+        log.info(
+            "the same answer was rejected in a later round: not falling back to it"
+        )
+    if (
+        fallback is not None
+        and not rejected_again
+        and not (accepted and final["status"] == "answered")
+    ):
+        # the coverage round found nothing better: keep the answer it was meant to check
+        final, kept = fallback
+        verification = {
+            **kept,
+            "decision": kept["decision_before_coverage"],
+            "final_answer": kept["answer_in"],
+            "fallback_from_round": verification.get("round"),
+        }
+        log.info(
+            "round %s did not improve on round %s: keeping %r",
+            verification["fallback_from_round"],
+            kept["round"],
+            kept["answer_in"],
+        )
     timings["03-05_agent_loop"] = round(time.perf_counter() - t_loop, 1)
     timings["tool_calls_total"] = tool_calls_total
-    timings["rounds"] = final["round"]
+    timings["rounds"] = verification.get("fallback_from_round") or final["round"]
 
     # ---- 06 eval
     cost = ledger.summary()

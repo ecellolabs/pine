@@ -46,14 +46,15 @@ from pine.agent.common import (
     CostLedger,
     append_jsonl,
     render_page,
+    run_on_thread_loop,
     setup_logger,
     write_json,
 )
-from pine.agent.llm import TracedModel, response_to_chat, traced_model
+from pine.agent.llm import CALL_PURPOSE, TracedModel, response_to_chat, traced_model
 from pine.agent.locate import BM25, build_page_corpus, enriched_outline
 from pine.agent.locate import tokens as _tokens
-from pine.agent.schemas import FinalAnswer
-from pine.agent.verifier import quote_in_text
+from pine.agent.schemas import Decision, FinalAnswer, Text
+from pine.agent.verifier import quote_on_page
 
 DEFAULT_MAX_TOOL_CALLS = 12
 READ_PAGE_MAX_CHARS = 5000
@@ -118,10 +119,19 @@ class NavDeps:
     anomalies: list[dict[str, Any]] = field(default_factory=list)
     seen_calls: Counter[str] = field(default_factory=Counter)
     plan: dict[str, Any] = field(default_factory=dict)
+    question: str = ""
+    # procedural navigator: every reading of this round, with ``cited`` set after the decision
+    notes: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def n_pages(self) -> int:
         return int(self.index["n_pages"])
+
+    def inspections_of(self, page: int) -> str:
+        """Everything the vision model said about ``page`` in this round."""
+        return "\n".join(
+            i["result"] for i in self.image_inspections if i["page"] == page
+        )
 
     def record(self, name: str, args: dict[str, Any], result: str) -> str:
         """Log a tool call (full result file, log line, trace event) and return the
@@ -180,6 +190,62 @@ def _page_ok(deps: NavDeps, page: int) -> int:
     if not 1 <= page <= deps.n_pages:
         raise ModelRetry(f"page {page} is out of range 1..{deps.n_pages}")
     return page
+
+
+def _read_pages(deps: NavDeps, pages: list[int]) -> str:
+    """The text the navigator sees for ``pages`` (title line, Markdown, truncation)."""
+    out_blocks: list[str] = []
+    for p in pages:
+        deps.pages_read.append(p)
+        md = deps.pages_md[p].strip()
+        head = f"[page {p}] title: {deps.index['pages'][str(p)]['title']}\n"
+        if len(md) < 40:
+            res = head + (
+                "(This page has no machine-readable text. "
+                "Use inspect_page_image to look at it.)"
+            )
+        else:
+            if len(md) > READ_PAGE_MAX_CHARS:
+                md = md[:READ_PAGE_MAX_CHARS] + "\n...[truncated]"
+            res = head + md
+        out_blocks.append(res)
+    return "\n\n---\n\n".join(out_blocks)
+
+
+async def _inspect_page(deps: NavDeps, p: int, focus: str) -> str:
+    """Ask the vision model about page ``p`` and keep the reading in ``image_inspections``.
+
+    The original question goes first and unchanged: a paraphrase by the navigator can ask a
+    different question ("more important than" for "as important as")."""
+    jpeg = render_page(deps.pdf_path, p, max_side=1024, quality=80)
+    img_dir = deps.step_dir / "images_viewed"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    seq = len(deps.image_inspections) + 1
+    img_path = img_dir / f"round{deps.round_no}_page{p:03d}_{seq:02d}.jpg"
+    img_path.write_bytes(jpeg)
+    vision_agent: Agent[None, str] = Agent(
+        deps.vision_model,
+        instructions=VISION_INSTRUCTIONS,
+        model_settings=ModelSettings(temperature=0.0, max_tokens=350),
+    )
+    prompt = f"Page {p} of the document. {focus}"
+    if deps.question:
+        prompt = (
+            f"Page {p} of the document.\nOriginal question (answer this one; it "
+            f"wins over the focus note if they differ): {deps.question}\n"
+            f"Focus note from the agent: {focus}"
+        )
+    try:
+        reply = await vision_agent.run(
+            [BinaryContent(data=jpeg, media_type="image/jpeg"), prompt]
+        )
+        text = reply.output.strip() or "(vision model returned empty content)"
+    except Exception as exc:  # noqa: BLE001
+        text = f"ERROR: vision model call failed: {exc}"
+    deps.image_inspections.append(
+        {"page": p, "question": focus, "image": img_path.name, "result": text}
+    )
+    return text
 
 
 # agent
@@ -245,13 +311,10 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
                 )
                 if qp is not None:
                     p = _page_ok(deps, qp)
-                    page_text = deps.pages_md.get(p, "")
-                    in_text = quote_in_text(out.quote, page_text)[0]
-                    in_img = any(
-                        i["page"] == p and quote_in_text(out.quote, i["result"])[0]
-                        for i in deps.image_inspections
+                    found, _, source = quote_on_page(
+                        out.quote, deps.pages_md.get(p, ""), deps.inspections_of(p)
                     )
-                    if in_text or in_img:
+                    if found:
                         entry = {
                             "page": p,
                             "quote": out.quote,
@@ -259,7 +322,7 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
                             "note": out.reasoning
                             or "Inline evidence from final_answer",
                             "round": deps.round_no,
-                            "source": "page_text" if in_text else "image_inspection",
+                            "source": source,
                         }
                         deps.ledger.append(entry)
                         deps.log.info(
@@ -333,23 +396,7 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
         """
         deps = ctx.deps
         pages = page if isinstance(page, list) else [page]
-        out_blocks: list[str] = []
-        for p_raw in pages:
-            p = _page_ok(deps, p_raw)
-            deps.pages_read.append(p)
-            md = deps.pages_md[p].strip()
-            head = f"[page {p}] title: {deps.index['pages'][str(p)]['title']}\n"
-            if len(md) < 40:
-                res = head + (
-                    "(This page has no machine-readable text. "
-                    "Use inspect_page_image to look at it.)"
-                )
-            else:
-                if len(md) > READ_PAGE_MAX_CHARS:
-                    md = md[:READ_PAGE_MAX_CHARS] + "\n...[truncated]"
-                res = head + md
-            out_blocks.append(res)
-        result = "\n\n---\n\n".join(out_blocks)
+        result = _read_pages(deps, [_page_ok(deps, p) for p in pages])
         return deps.record("read_page", {"page": page}, result)
 
     @agent.tool
@@ -366,31 +413,8 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
         """
         deps = ctx.deps
         p = _page_ok(deps, page)
-        jpeg = render_page(deps.pdf_path, p, max_side=1024, quality=80)
-        img_dir = deps.step_dir / "images_viewed"
-        img_dir.mkdir(parents=True, exist_ok=True)
-        seq = len(deps.image_inspections) + 1
-        img_path = img_dir / f"round{deps.round_no}_page{p:03d}_{seq:02d}.jpg"
-        img_path.write_bytes(jpeg)
-        vision_agent: Agent[None, str] = Agent(
-            deps.vision_model,
-            instructions=VISION_INSTRUCTIONS,
-            model_settings=ModelSettings(temperature=0.0, max_tokens=350),
-        )
         deps.vision_model.purpose = f"inspect_page_{p}"
-        try:
-            reply = await vision_agent.run(
-                [
-                    BinaryContent(data=jpeg, media_type="image/jpeg"),
-                    f"Page {p} of the document. {question}",
-                ]
-            )
-            text = reply.output.strip() or "(vision model returned empty content)"
-        except Exception as exc:  # noqa: BLE001
-            text = f"ERROR: vision model call failed: {exc}"
-        deps.image_inspections.append(
-            {"page": p, "question": question, "image": img_path.name, "result": text}
-        )
+        text = await _inspect_page(deps, p, question)
         result = f"[vision model on page {p} image] {text}"
         return deps.record(
             "inspect_page_image", {"page": p, "question": question}, result
@@ -400,9 +424,9 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
     def record_evidence(
         ctx: RunContext[NavDeps],
         page: int,
-        quote: str,
-        candidate_answer: str,
-        note: str = "",
+        quote: Text,
+        candidate_answer: Text,
+        note: Text = "",
     ) -> str:
         """Record a candidate answer in the evidence ledger with the page number and
         an exact supporting quotation copied from the page text or from the image
@@ -416,12 +440,8 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
         """
         deps = ctx.deps
         p = _page_ok(deps, page)
-        in_text, sim_text = quote_in_text(quote, deps.pages_md.get(p, ""))
-        inspections = "\n".join(
-            i["result"] for i in deps.image_inspections if i["page"] == p
-        )
-        in_img, sim_img = (
-            quote_in_text(quote, inspections) if inspections else (False, 0.0)
+        found, sim, source = quote_on_page(
+            quote, deps.pages_md.get(p, ""), deps.inspections_of(p)
         )
         args = {
             "page": p,
@@ -429,32 +449,27 @@ def build_navigator(text_model: TracedModel) -> Agent[NavDeps, FinalAnswer]:
             "candidate_answer": candidate_answer,
             "note": note,
         }
-        if not (in_text or in_img):
+        if not found:
             deps.anomalies.append(
                 {
                     "type": "QUOTE_REJECTED",
                     "turn": deps.calls + 1,
                     "page": p,
                     "quote": quote[:300],
-                    "sim_page_text": sim_text,
-                    "sim_image_inspection": sim_img,
+                    "similarity": sim,
                 }
             )
             deps.record(
                 "record_evidence",
                 args,
                 f"REJECTED: quote not found verbatim on page {p} "
-                f"(similarity {sim_text:.2f}).",
+                f"(similarity {sim:.2f}).",
             )
             raise ModelRetry(
                 f"The quote is not found verbatim on page {p}. Copy the exact text from "
                 "read_page or inspect_page_image output (a short exact phrase is enough)."
             )
-        entry = {
-            **args,
-            "round": deps.round_no,
-            "source": "page_text" if in_text else "image_inspection",
-        }
+        entry = {**args, "round": deps.round_no, "source": source}
         deps.ledger.append(entry)
         result = f"Recorded evidence #{len(deps.ledger)} (page {p}, source {entry['source']})."
         return deps.record("record_evidence", args, result)
@@ -470,7 +485,12 @@ def _request_anomalies(deps: NavDeps, parts: list[Any]) -> None:
             if part.tool_name == "record_evidence" and "not found verbatim" in content:
                 continue  # already recorded as QUOTE_REJECTED by the tool
             if part.tool_name == "final_answer":
-                kind = "FINAL_WITHOUT_EVIDENCE"
+                # schema errors arrive as a list of error dicts, effort_gate as a string
+                kind = (
+                    "OUTPUT_VALIDATION"
+                    if isinstance(part.content, list)
+                    else "FINAL_WITHOUT_EVIDENCE"
+                )
             elif part.tool_name:
                 kind = "BAD_TOOL_ARGS"
             else:
@@ -581,6 +601,274 @@ async def _forced_final(
         )
 
 
+# procedural navigator: a fixed reading pass, then one typed decision
+NOTE_MAX_CHARS = 4000
+MAX_PASS_PAGES = 8  # pages read in one pass (forced and carried-over pages come first)
+MIN_PASS_PAGES = (
+    6  # the anchor pages are topped up with the next ranked pages (text is free)
+)
+MAX_PASS_IMAGES = 4  # vision readings in one pass
+SEARCH_PAGES = 3  # new pages one search adds
+
+DECIDE_INSTRUCTIONS = """You are the NAVIGATOR of a grounded document question-answering agent. You answer ONE question about the document "{doc_title}" ({n_pages} pages) using ONLY the numbered notes you are given. The pages most likely to hold the evidence were already read for you: each note is the text of one page, or a vision model's reading of a page image (for figures, charts, tables and scanned pages).
+
+Choose one action:
+- "answer": the notes contain the answer. Give a concise answer to the question exactly as asked (not to a similar question), and in evidence the note numbers it rests on, each with a short phrase copied exactly from that note. For a computed answer (sum, difference, count) do the arithmetic carefully and cite the notes holding every number you used.
+- "search": the notes do not hold the answer but other pages of the document might. Give 2-4 short keyword queries. {search_rule}
+- "abstain": the notes show that the document does not contain the information."""
+
+SEARCH_ALLOWED = "You can search once."
+SEARCH_USED = 'No search is left: choose "answer" or "abstain".'
+
+
+IMAGE_LED_CHARS = 1500  # a page with pictures and less text than this is mostly image
+
+
+def _needs_image(deps: NavDeps, p: int) -> bool:
+    """Decided in code, not by the model: pages without text, the page of a referenced
+    figure/table, image-led pages (pictures and little text: slides, infographics), and
+    pages with visual elements when the plan expects visual evidence."""
+    if len(deps.pages_md[p].strip()) < 40:
+        return True
+    refs = deps.plan.get("locator", {}).get("refs", [])
+    if any(p in r.get("pages", []) for r in refs):
+        return True
+    ps = deps.index["pages"][str(p)]
+    if ps.get("pictures_count") and len(deps.pages_md[p].strip()) < IMAGE_LED_CHARS:
+        return True
+    visual = bool(
+        ps.get("figures") or ps.get("tables") or ps.get("has_visual_elements")
+    )
+    return bool(deps.plan.get("needs_visual_inspection")) and visual
+
+
+async def _read_into_notes(
+    deps: NavDeps, pages: list[int], notes: list[dict[str, Any]]
+) -> None:
+    """Read ``pages`` and inspect the visual ones (concurrently); one note per reading."""
+    focus = "; ".join(deps.plan.get("sub_goals") or []) or deps.question
+    for p in pages:
+        deps.record("read_page", {"page": p}, _read_pages(deps, [p]))
+        text = deps.pages_md[p].strip()
+        if len(text) >= 40:
+            notes.append(
+                {
+                    "id": len(notes) + 1,
+                    "page": p,
+                    "source": "page_text",
+                    "text": text[:NOTE_MAX_CHARS],
+                }
+            )
+    # the image slots go to the pages most likely to hold the evidence: referenced
+    # figures first, then the locator's ranking, then the rest (pages added for coverage)
+    refs = {
+        q
+        for r in deps.plan.get("locator", {}).get("refs", [])
+        for q in r.get("pages", [])
+    }
+    rank = {
+        r["page"]: i
+        for i, r in enumerate(deps.plan.get("locator", {}).get("ranked_pages", []))
+    }
+    image_pages = sorted(
+        (p for p in pages if _needs_image(deps, p)),
+        key=lambda p: (p not in refs, rank.get(p, len(rank)), pages.index(p)),
+    )[:MAX_PASS_IMAGES]
+
+    async def look(p: int) -> str:
+        CALL_PURPOSE.set(f"inspect_page_{p}")  # task-local: the calls run concurrently
+        return await _inspect_page(deps, p, focus)
+
+    readings = await asyncio.gather(*(look(p) for p in image_pages))
+    for p, text in zip(image_pages, readings):
+        deps.record(
+            "inspect_page_image",
+            {"page": p, "question": focus},
+            f"[vision model on page {p} image] {text}",
+        )
+        notes.append(
+            {
+                "id": len(notes) + 1,
+                "page": p,
+                "source": "image_inspection",
+                "text": text,
+            }
+        )
+
+
+def _notes_prompt(
+    question: str,
+    plan: dict[str, Any],
+    notes: list[dict[str, Any]],
+    feedback: str | None,
+) -> str:
+    lines = [
+        f"Question: {question}",
+        f"Expected answer format: {plan.get('expected_answer_format', 'Str')}",
+    ]
+    if feedback:
+        lines.append(f"The verifier rejected the previous round: {feedback}")
+    lines.append("\nNotes:")
+    for n in notes:
+        kind = "text" if n["source"] == "page_text" else "image (vision model reading)"
+        lines.append(f"[note {n['id']}] page {n['page']} {kind}:\n{n['text']}\n")
+    if not notes:
+        lines.append("(no page could be read)")
+    return "\n".join(lines)
+
+
+def build_decider(
+    text_model: TracedModel, index: dict[str, Any]
+) -> Agent[Any, Decision]:
+    agent: Agent[Any, Decision] = Agent(
+        text_model,
+        output_type=ToolOutput(Decision, name="decide"),
+        retries=2,
+        model_settings=ModelSettings(temperature=0.0, max_tokens=600),
+    )
+
+    @agent.output_validator
+    def cites_notes(ctx: RunContext[Any], out: Decision) -> Decision:
+        """An answer must cite at least one existing note; unknown note numbers are dropped."""
+        n_notes: int = ctx.deps
+        out.evidence = [e for e in out.evidence if 1 <= e.note <= n_notes]
+        if out.action == "answer" and not out.evidence:
+            raise ModelRetry(
+                f"An answer must cite the note(s) it rests on: evidence with note numbers "
+                f"between 1 and {n_notes}."
+            )
+        return out
+
+    return agent
+
+
+def _ledger_from(
+    deps: NavDeps, decision: Decision, notes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The evidence ledger is built in code from the cited notes. The source is the cited
+    note's (page text or vision reading), never guessed by matching; the model's phrase is
+    kept when it stands in that note, else the note's own (verbatim) text."""
+    by_id = {n["id"]: n for n in notes}
+    ledger = []
+    for ref in decision.evidence:
+        n = by_id[ref.note]
+        quote = ref.quote.strip()
+        if not quote or not quote_on_page(quote, n["text"])[0]:
+            quote = n["text"][:500]
+        ledger.append(
+            {
+                "page": n["page"],
+                "quote": quote,
+                "candidate_answer": decision.answer,
+                "note": f"note {n['id']}",
+                "round": deps.round_no,
+                "source": n["source"],
+            }
+        )
+    return ledger
+
+
+async def _procedural(
+    agent: Agent[Any, Decision],
+    deps: NavDeps,
+    doc_title: str,
+    feedback: str | None,
+) -> FinalAnswer:
+    """Read the plan's anchor pages, decide; on "search" read the best new pages once and
+    decide again. Failures end in an abstention, never in a retry loop."""
+    plan = deps.plan
+    anchors = [p for p in plan.get("anchor_pages") or [] if 1 <= p <= deps.n_pages]
+    ranked = [
+        r["page"]
+        for r in plan.get("locator", {}).get("ranked_pages", [])
+        if 1 <= r["page"] <= deps.n_pages
+    ]
+    first_pass = list(dict.fromkeys(anchors))
+    for p in ranked:  # the planner's pages can miss: also read the next ranked pages
+        if len(first_pass) >= MIN_PASS_PAGES:
+            break
+        if p not in first_pass:
+            first_pass.append(p)
+    notes = deps.notes
+    await _read_into_notes(deps, first_pass[:MAX_PASS_PAGES], notes)
+    decision: Decision | None = None
+    for search_left in (True, False):
+        instructions = DECIDE_INSTRUCTIONS.format(
+            doc_title=doc_title,
+            n_pages=deps.n_pages,
+            search_rule=SEARCH_ALLOWED if search_left else SEARCH_USED,
+        )
+        prompt = _notes_prompt(deps.question, plan, notes, feedback)
+        append_jsonl(
+            deps.trace_path,
+            {
+                "event": "start",
+                "round": deps.round_no,
+                "system": instructions,
+                "user": prompt,
+            },
+        )
+        try:
+            decision = (
+                await agent.run(prompt, deps=len(notes), instructions=instructions)
+            ).output
+        except (UnexpectedModelBehavior, UsageLimitExceeded) as exc:
+            deps.anomalies.append({"type": "MODEL_BEHAVIOR", "detail": str(exc)[:400]})
+            deps.log.warning("decision failed: %s -> abstain", exc)
+            decision = None
+            break
+        append_jsonl(
+            deps.trace_path,
+            {
+                "event": "assistant",
+                "turn": deps.calls,
+                "content": "",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "decide",
+                            "arguments": decision.model_dump_json(),
+                        },
+                    }
+                ],
+            },
+        )
+        if decision.action != "search" or not search_left:
+            break
+        seen = set(deps.pages_read)
+        score: dict[int, float] = {}
+        for q in decision.search_queries[:4] or [deps.question]:
+            hits = deps.bm25.search(q, k=5)
+            deps.record(
+                "search_pages",
+                {"query": q},
+                "\n".join(f"- page {p} (score {s:.1f})" for p, s in hits) or "no match",
+            )
+            for p, s in hits:
+                if p not in seen:
+                    score[p] = score.get(p, 0.0) + s
+        new_pages = sorted(score, key=lambda p: -score[p])[:SEARCH_PAGES]
+        if not new_pages:
+            break
+        await _read_into_notes(deps, new_pages, notes)
+    if decision is None or decision.action != "answer":
+        return FinalAnswer(
+            status="not_answerable",
+            answer="Not answerable",
+            reasoning=decision.reasoning if decision else "decision failed",
+        )
+    for ref in decision.evidence:
+        notes[ref.note - 1]["cited"] = True
+    deps.ledger.extend(_ledger_from(deps, decision, notes))
+    return FinalAnswer(
+        status="answered",
+        answer=decision.answer or "Not answerable",
+        evidence_pages=list(dict.fromkeys(e["page"] for e in deps.ledger)),
+        reasoning=decision.reasoning,
+    )
+
+
 def _format_plan_as_markup(plan: dict[str, Any]) -> str:
     """Format the plan dictionary as clean Markdown markup instead of raw JSON."""
     lines: list[str] = []
@@ -686,6 +974,7 @@ def run_orchestrator(
         vision_model=vision_model,
         trace_path=trace_path,
         plan=plan,
+        question=question,
     )
 
     plan_view = {
@@ -706,6 +995,18 @@ def run_orchestrator(
             f"\n\nThis is round {round_no}. The verifier rejected the previous round: "
             f"{prior_feedback}\nClose these gaps before answering."
         )
+    if settings.navigator == "procedural":
+        text_model.purpose = f"navigator_decide_round{round_no}"
+        final_obj: FinalAnswer | None = run_on_thread_loop(
+            _procedural(
+                build_decider(text_model, index),
+                deps,
+                index["doc_title"],
+                prior_feedback,
+            )
+        )
+        return _finish_round(deps, final_obj, False, round_no, step_dir, log)
+
     append_jsonl(
         trace_path,
         {"event": "start", "round": round_no, "system": system, "user": user},
@@ -729,6 +1030,19 @@ def run_orchestrator(
         return await _forced_final(text_model, deps, question, failure), True
 
     final_obj, salvaged = asyncio.run(_round())
+    return _finish_round(deps, final_obj, salvaged, round_no, step_dir, log)
+
+
+def _finish_round(
+    deps: NavDeps,
+    final_obj: FinalAnswer | None,
+    salvaged: bool,
+    round_no: int,
+    step_dir: Path,
+    log: logging.Logger,
+) -> dict[str, Any]:
+    """The round's final dict (the verifier's input) and its files, for both navigators."""
+    trace_path = deps.trace_path
     assert final_obj is not None
     final: dict[str, Any] = {
         "status": final_obj.status,
@@ -744,11 +1058,14 @@ def run_orchestrator(
         "image_inspections": deps.image_inspections,
         "ledger": deps.ledger,
         "anomalies": deps.anomalies,
+        "notes": deps.notes,
     }
     write_json(step_dir / f"ledger_round{round_no}.json", deps.ledger)
     write_json(step_dir / f"anomalies_round{round_no}.json", deps.anomalies)
     public = {
-        k: v for k, v in final.items() if k not in ("ledger", "image_inspections")
+        k: v
+        for k, v in final.items()
+        if k not in ("ledger", "image_inspections", "notes")
     }
     write_json(step_dir / f"final_round{round_no}.json", public)
     append_jsonl(

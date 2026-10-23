@@ -1,0 +1,79 @@
+{
+  "name": "s3",
+  "dataset": "mmlongbench_doc",
+  "description": "Ten MMLongBench-Doc questions on ten documents not used in s0/s2, for testing changes on unseen data. Seven documents already cached locally plus three of the types they lack (brochure, financial report, guidebook). Covers chart, table, figure, layout and plain-text evidence; Str, Int, Float, List and None answers; a multi-page computed answer; two unanswerable questions (figure-side and text-side); documents from 15 to over 100 pages.",
+  "created": "2026-10-22",
+  "author": "Muhammad Talal Majeed",
+  "samples": [
+    {
+      "run_id": "run1_gestalt_deck_chart_float",
+      "doc_id": "0e94b4197b10096b1f4c699701570fbf.pdf",
+      "question": "According to the chart on page 14 how much time was spent with family and friends in 2010?",
+      "why_chosen": "Tutorial deck (15 pages). A percentage read off a chart the question locates by page. Tests chart reading with an explicit page hint.",
+      "n_pages": 15
+    },
+    {
+      "run_id": "run2_paper_text_table_float",
+      "doc_id": "2310.05634v2.pdf",
+      "question": "From the paper, which temperature gives ChatGPT the highest alignment score?",
+      "why_chosen": "Academic paper (24 pages). The answer needs a table and its surrounding text on one page. Tests table reading in a born-digital paper.",
+      "n_pages": 24
+    },
+    {
+      "run_id": "run3_wikimaps_deck_figure_color",
+      "doc_id": "52b3137455e7ca4df65021a200aef724.pdf",
+      "question": "What is the color of the zone Mali in the map used to demonstrate GeoShapes using SPARQL and OSM?",
+      "why_chosen": "Long workshop deck (112 pages). A colour on a map figure deep in the document. Tests the locator on a long deck and visual reading of a map.",
+      "n_pages": 112
+    },
+    {
+      "run_id": "run4_independents_multipage_float",
+      "doc_id": "Independents-Report.pdf",
+      "question": "What's the percentage of people who are democrats and voted in the last election compared to the entire population in 2018?",
+      "why_chosen": "Research report (23 pages). A percentage computed from two pages of text. Tests evidence spread across pages and arithmetic.",
+      "n_pages": 23
+    },
+    {
+      "run_id": "run5_pew_economy_chart_list",
+      "doc_id": "PH_2016.06.08_Economy-Final.pdf",
+      "question": "According to this report, from 2014 to 2015, one group has the most significant drop of percentage of households claiming their income was falling behind cost of living.\nWhich group is this, and what is the percentage droped?",
+      "why_chosen": "Research report (23 pages). A two-item list (group and size of the drop) read from a chart. Tests the List format and chart comparison.",
+      "n_pages": 23
+    },
+    {
+      "run_id": "run6_datadriven_deck_unanswerable_figure",
+      "doc_id": "ddoseattle-150627210357-lva1-app6891_95.pdf",
+      "question": "In the cartoon in page 25, what does the elephant represent?",
+      "why_chosen": "Workshop deck (63 pages). Unanswerable: the cartoon on page 25 has a hippo, no elephant. Tests figure-side abstention on a question that names a real page.",
+      "n_pages": 63
+    },
+    {
+      "run_id": "run7_earlybird_unanswerable_text",
+      "doc_id": "earlybird-110722143746-phpapp02_95.pdf",
+      "question": "Which newspaper's opinions are selected to illustrate the situation of Spain venture capital?",
+      "why_chosen": "Research deck (41 pages). Unanswerable: the deck cites magazines on German, not Spanish, venture capital. Tests text-side abstention against a near-miss.",
+      "n_pages": 41
+    },
+    {
+      "run_id": "run8_pwc_brochure_figure_int",
+      "doc_id": "PWC_opportunity_of_lifetime.pdf",
+      "question": "How many employees dose PWC Assurance have?",
+      "why_chosen": "Brochure. A number printed inside an infographic. Tests figure reading in a brochure layout.",
+      "n_pages": null
+    },
+    {
+      "run_id": "run9_bestbuy_10k_text_int",
+      "doc_id": "BESTBUY_2023_10K.pdf",
+      "question": "what goodwill does Best Buy have for for the fiscal year ending January 28, 2023?",
+      "why_chosen": "Financial report (10-K). A dollar amount stated in text in a long filing. Tests retrieval in a long financial document.",
+      "n_pages": null
+    },
+    {
+      "run_id": "run10_sao_guidebook_text_str",
+      "doc_id": "SAO-StudentSupport_Guidebook-Content.pdf",
+      "question": "Excepted for the public holidays, when is the counter closed on Tuesday according to the provided operating hours?",
+      "why_chosen": "Guidebook. Opening hours from a short text passage. Tests layout text in a guidebook.",
+      "n_pages": null
+    }
+  ]
+}

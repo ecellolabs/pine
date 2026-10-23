@@ -133,10 +133,13 @@ def run_planner(
     gaps: list[str] | None = None,
     parser_dir: Path | None = None,
     prior: dict[str, Any] | None = None,
+    force_pages: list[int] | None = None,
 ) -> dict[str, Any]:
     """``parser_dir`` gives the locator the page Markdown (full-text BM25); ``prior``
     is the previous round's outcome (candidate_sections, anchor_pages, pages_read,
-    tool_calls_used, status) so a re-plan can change course."""
+    tool_calls_used, status) so a re-plan can change course; ``force_pages`` (the pages the
+    verifier asked for, then the previous round's cited pages) are opened first, so evidence
+    spread over pages is kept together."""
     log = setup_logger("step3.planner", step_dir / "planner.log", run_log)
     step_dir.mkdir(parents=True, exist_ok=True)
     pages_md: dict[int, str] = {}
@@ -201,6 +204,10 @@ def run_planner(
     # code-side guarantee (also covers a model that never called the tool)
     loc = locator.locate(question, list(plan.get("search_queries") or []))
     plan = _merge_locator(plan, loc)
+    forced = [p for p in force_pages or [] if 1 <= p <= int(index["n_pages"])]
+    if forced:
+        plan["anchor_pages"] = list(dict.fromkeys(forced + plan["anchor_pages"]))
+    plan["forced_pages"] = forced
     plan["locator"]["tool_called"] = bool(deps.calls)
     plan["round"] = round_no
     plan["gaps_in"] = gaps or []

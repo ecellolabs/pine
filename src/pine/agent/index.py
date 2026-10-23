@@ -20,12 +20,13 @@ Writes:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -38,10 +39,11 @@ from pine.agent.common import (
     CostLedger,
     read_json,
     render_page,
+    run_on_thread_loop,
     setup_logger,
     write_json,
 )
-from pine.agent.llm import traced_model
+from pine.agent.llm import CALL_PURPOSE, traced_model
 from pine.agent.schemas import Hierarchy, PageSummary
 
 SUMMARY_INSTRUCTIONS = (
@@ -311,45 +313,43 @@ def run_index(
         sum(len(v.tables) for v in visuals.values()),
         next(iter(visuals.values())).captions_source if visuals else "n/a",
     )
-    with summaries_path.open("a", encoding="utf-8") as out:
-        for st in stats["page_stats"]:
-            p = st["page"]
-            md = pages_md[p]
-            vis = visuals[p]
-            ext_figs, ext_tabs = vis.figures, vis.tables
-            if p in done:
-                # captions are authoritative: overwrite whatever an older index stored
-                cached: dict[str, Any] = done[p]
-                cached.update(vis.to_dict())
-                pages[str(p)] = cached
-                continue
-            use_image = st["docling_chars"] < 40
-            rec: dict[str, Any] = {
-                "page": p,
-                "source": "image" if use_image else "text",
-                "docling_chars": st["docling_chars"],
-                "tables_count": st["tables"],
-                "pictures_count": st["pictures"],
-            }
+    sem = asyncio.Semaphore(max(1, settings.index_concurrency))
+
+    async def summarise(st: dict[str, Any], out: TextIO) -> dict[str, Any]:
+        """Summarise one page; pages run concurrently (bounded by the semaphore)."""
+        p = st["page"]
+        md = pages_md[p]
+        vis = visuals[p]
+        ext_figs, ext_tabs = vis.figures, vis.tables
+        use_image = st["docling_chars"] < 40
+        rec: dict[str, Any] = {
+            "page": p,
+            "source": "image" if use_image else "text",
+            "docling_chars": st["docling_chars"],
+            "tables_count": st["tables"],
+            "pictures_count": st["pictures"],
+        }
+        async with sem:
+            CALL_PURPOSE.set(f"page_summary_p{p}")
             try:
                 if use_image:
-                    vision_model.purpose = f"page_summary_p{p}"
                     jpeg = render_page(pdf_path, p, max_side=768, quality=70)
-                    raw_text = image_summary_agent.run_sync(
-                        [
-                            BinaryContent(data=jpeg, media_type="image/jpeg"),
-                            f"Page {p} of {n_pages} of the document.",
-                        ]
+                    raw_text = (
+                        await image_summary_agent.run(
+                            [
+                                BinaryContent(data=jpeg, media_type="image/jpeg"),
+                                f"Page {p} of {n_pages} of the document.",
+                            ]
+                        )
                     ).output
                     summary = _parse_image_summary_output(raw_text, p)
                 else:
-                    text_model.purpose = f"page_summary_p{p}"
                     prompt_text = PAGE_SUMMARY_PROMPT.format(
                         page=p, n_pages=n_pages, text=_truncate(md, 3000)
                     )
                     if ext_figs or ext_tabs:
                         prompt_text += f"\n\nDETECTED VISUAL ASSETS ON THIS PAGE:\nFigures: {ext_figs}\nTables: {ext_tabs}\nMake sure to retain these exact figure and table titles in your response fields."
-                    summary = summary_agent.run_sync(prompt_text).output
+                    summary = (await summary_agent.run(prompt_text)).output
 
                 # model-proposed captions are hints: keep only those verbatim on the page
                 hint_figs = verify_hints(list(getattr(summary, "figures", [])), md)
@@ -383,15 +383,33 @@ def run_index(
                         "error": str(exc),
                     }
                 )
-            log.info(
-                "page %3d [%s] title=%r figures=%r",
-                p,
-                rec["source"],
-                rec["title"],
-                rec.get("figures"),
-            )
-            out.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            pages[str(p)] = rec
+        log.info(
+            "page %3d [%s] title=%r figures=%r",
+            p,
+            rec["source"],
+            rec["title"],
+            rec.get("figures"),
+        )
+        # one event loop thread: lines are written whole, as pages finish (resumable)
+        out.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        out.flush()
+        return rec
+
+    async def summarise_missing(out: TextIO) -> list[dict[str, Any]]:
+        todo = [st for st in stats["page_stats"] if st["page"] not in done]
+        return list(await asyncio.gather(*(summarise(st, out) for st in todo)))
+
+    with summaries_path.open("a", encoding="utf-8") as out:
+        fresh = {r["page"]: r for r in run_on_thread_loop(summarise_missing(out))}
+    for st in stats["page_stats"]:
+        p = st["page"]
+        if p in done:
+            # captions are authoritative: overwrite whatever an older index stored
+            cached: dict[str, Any] = done[p]
+            cached.update(visuals[p].to_dict())
+            pages[str(p)] = cached
+        else:
+            pages[str(p)] = fresh[p]
 
     # hierarchy (agent + output validator that forces a retry on an invalid tree)
     doc_title = pages["1"]["title"]

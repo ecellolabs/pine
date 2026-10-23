@@ -284,6 +284,24 @@ def main() -> None:
         help="Disable model reasoning/thinking (OpenRouter reasoning flag, vLLM enable_thinking=false), for hybrid-thinking models such as qwen3.5.",
     )
     parser.add_argument(
+        "--navigator",
+        choices=["procedural", "agentic"],
+        default="procedural",
+        help="procedural: read the anchor pages in code, then one decision; agentic: free tool calls.",
+    )
+    parser.add_argument(
+        "--index-concurrency",
+        type=int,
+        default=8,
+        help="Index page summaries requested at once (lower it for a small vLLM server).",
+    )
+    parser.add_argument(
+        "--ignore-provider",
+        action="append",
+        default=[],
+        help="OpenRouter provider to never route to; repeatable (e.g. Together, which rejects qwen3.5 with --no-reasoning and a required tool call).",
+    )
+    parser.add_argument(
         "--max-tokens-scale",
         type=float,
         default=1.0,
@@ -415,6 +433,9 @@ def main() -> None:
         docling_url=args.docling_url,
         rapidocr_backend=args.rapidocr_backend,
         reasoning=not args.no_reasoning,
+        openrouter_ignore_providers=args.ignore_provider,
+        index_concurrency=args.index_concurrency,
+        navigator=args.navigator,
         max_tokens_scale=args.max_tokens_scale,
         thinking_sampling=args.thinking_sampling,
         presence_penalty=args.presence_penalty,
