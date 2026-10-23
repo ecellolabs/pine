@@ -26,7 +26,6 @@ import os
 import sys
 from pathlib import Path
 
-from pine.agent.judge import make_judge_chat
 from pine.agent.baseline import (
     BaselineSettings,
     load_specs,
@@ -35,6 +34,7 @@ from pine.agent.baseline import (
     run_baseline,
     summarize,
 )
+from pine.agent.judge import make_judge_chat
 
 
 def main() -> None:
