@@ -20,6 +20,7 @@ Writes:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
@@ -240,6 +241,16 @@ def _sections_to_dicts(hierarchy: Hierarchy) -> list[dict[str, Any]]:
     return [s.model_dump() for s in hierarchy.sections]
 
 
+def index_settings(settings: AgentSettings) -> AgentSettings:
+    """Settings the index is built with: thinking, its sampling and the raised token budgets are
+    switched off when ``index_reasoning`` is False (a thinking run's index stays a plain one)."""
+    if settings.index_reasoning:
+        return settings
+    return dataclasses.replace(
+        settings, reasoning=False, thinking_sampling=False, max_tokens_scale=1.0
+    )
+
+
 def run_index(
     settings: AgentSettings,
     pdf_path: Path,
@@ -255,8 +266,9 @@ def run_index(
         return read_json(index_path)
     step_dir.mkdir(parents=True, exist_ok=True)
 
+    model_settings = index_settings(settings)
     text_model = traced_model(
-        settings,
+        model_settings,
         settings.text_model,
         step_dir=step_dir,
         ledger=ledger,
@@ -264,7 +276,7 @@ def run_index(
         step_name="02_index",
     )
     vision_model = traced_model(
-        settings,
+        model_settings,
         settings.vision_model,
         step_dir=step_dir,
         ledger=ledger,

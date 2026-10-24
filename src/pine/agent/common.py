@@ -56,6 +56,9 @@ class AgentSettings:
     # loop on itself until the token budget runs out. Off by default so old runs and caches
     # are unchanged.
     thinking_sampling: bool = False
+    # False builds the page index without thinking even when ``reasoning`` is on: the index makes
+    # about one short call per page, so thinking there is slow and adds nothing to the answers.
+    index_reasoning: bool = True
     presence_penalty: float = 0.0
     # LLM judge for step 6. Off when judge_model is None (the rule-based scorer is then the
     # score). The URL and key default to the ones the agent uses, so one vLLM server can do both.
@@ -94,6 +97,7 @@ class AgentSettings:
             "reasoning": self.reasoning,
             "max_tokens_scale": self.max_tokens_scale,
             "thinking_sampling": self.thinking_sampling,
+            "index_reasoning": self.index_reasoning,
             "presence_penalty": self.presence_penalty,
             "request_timeout_s": self.request_timeout_s,
             "judge_model": self.judge_model,
