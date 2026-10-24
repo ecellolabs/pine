@@ -1077,3 +1077,52 @@ def test_vision_evidence_is_not_relabelled_as_page_text(tmp_path: Path) -> None:
         2,
     )
     assert v["quote_checks"][0]["source"] is None
+
+
+def test_reasoning_roles_think_while_other_roles_do_not(tmp_path: Path) -> None:
+    settings = AgentSettings(
+        output_dir=tmp_path,
+        api_key="t",
+        reasoning=False,
+        reasoning_roles=["navigator"],
+        model_factory=lambda name: FunctionModel(_prompted_stub, model_name=name),
+    )
+    kw = {
+        "step_dir": tmp_path,
+        "ledger": CostLedger(tmp_path),
+        "logger": logging.getLogger("t"),
+    }
+    nav = traced_model(settings, "m", step_name="04", role="navigator", **kw)
+    ver = traced_model(settings, "m", step_name="05", role="verifier", **kw)
+    assert nav.run_settings.reasoning and nav.run_settings.thinking_sampling
+    assert nav.run_settings.max_tokens_scale > 1
+    assert not ver.run_settings.reasoning and not ver.run_settings.thinking_sampling
+
+
+def test_lean_index_builds_from_the_parse_and_ranks_by_passage(tmp_path: Path) -> None:
+    from pine.agent.lean_index import run_lean_index
+    from pine.agent.locate import RegionLocator
+
+    run_dir = tmp_path / "run"
+    parser_dir, _ = _write_parsed_doc(run_dir)
+    settings = AgentSettings(output_dir=tmp_path, api_key="t")
+    index = run_lean_index(
+        settings,
+        run_dir / "doc.pdf",
+        parser_dir,
+        run_dir / "02_lean",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+    )
+    assert index["index_kind"] == "lean" and index["visual_calls"] == 0
+    covered = [
+        p for s in index["sections"] for p in range(s["start_page"], s["end_page"] + 1)
+    ]
+    assert covered == [1, 2]
+    pages_md = {
+        p: (parser_dir / "pages" / f"page_{p:03d}.md").read_text() for p in (1, 2)
+    }
+    assert (
+        RegionLocator(index, pages_md).rank_pages("NARL atmospheric research")[0][0]
+        == 2
+    )

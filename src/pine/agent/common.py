@@ -46,6 +46,10 @@ class AgentSettings:
     vision_model: str = DEFAULT_VISION_MODEL
     max_rounds: int = 2
     max_tool_calls: int = 12
+    # "lean" (default): Docling structure in code plus a transcription of each large image
+    # (agent/lean_index.py); "full": the original model page summaries + model section tree
+    # (agent/index.py), kept for comparison. See INDEX.md.
+    index_mode: str = "lean"
     # "procedural": read the plan's anchor pages in code, then one typed decision (default);
     # "agentic": the navigator picks its own tool calls (the original design)
     navigator: str = "procedural"
@@ -59,6 +63,9 @@ class AgentSettings:
     # OpenRouter providers never to route to (e.g. Together rejects qwen3.5 with reasoning
     # off and a required tool call). Empty keeps OpenRouter's default routing.
     openrouter_ignore_providers: list[str] = field(default_factory=list)
+    # roles that think even when ``reasoning`` is False: "planner", "navigator", "verifier"
+    # (index summaries and vision readings keep ``reasoning``)
+    reasoning_roles: list[str] = field(default_factory=list)
     # Multiplies every call's max_tokens; reasoning models need room to think before answering.
     max_tokens_scale: float = 1.0
     # True replaces every call's greedy decoding with the Qwen3.5 model card's thinking-mode
@@ -102,12 +109,14 @@ class AgentSettings:
             "vision_model": self.vision_model,
             "max_rounds": self.max_rounds,
             "max_tool_calls": self.max_tool_calls,
+            "index_mode": self.index_mode,
             "navigator": self.navigator,
             "index_concurrency": self.index_concurrency,
             "docling_url": self.docling_url,
             "rapidocr_backend": self.rapidocr_backend,
             "reasoning": self.reasoning,
             "openrouter_ignore_providers": self.openrouter_ignore_providers,
+            "reasoning_roles": self.reasoning_roles,
             "max_tokens_scale": self.max_tokens_scale,
             "thinking_sampling": self.thinking_sampling,
             "index_reasoning": self.index_reasoning,

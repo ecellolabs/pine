@@ -37,6 +37,7 @@ from pine.agent.common import (
 )
 from pine.agent.index import run_index
 from pine.agent.judge import make_judge_chat, score_answer
+from pine.agent.lean_index import run_lean_index
 from pine.agent.orchestrator import run_orchestrator
 from pine.agent.parser import run_parser
 from pine.agent.planner import run_planner
@@ -302,14 +303,24 @@ def run_sample(
 
     # ---- 02 index
     t = time.perf_counter()
-    index = run_index(
-        settings,
-        spec.pdf_path,
-        run_dir / STEP_DIRS[1],
-        run_dir / STEP_DIRS[2],
-        run_log,
-        ledger,
-    )
+    if settings.index_mode == "lean":
+        index = run_lean_index(
+            settings,
+            spec.pdf_path,
+            run_dir / STEP_DIRS[1],
+            run_dir / STEP_DIRS[2],
+            run_log,
+            ledger,
+        )
+    else:
+        index = run_index(
+            settings,
+            spec.pdf_path,
+            run_dir / STEP_DIRS[1],
+            run_dir / STEP_DIRS[2],
+            run_log,
+            ledger,
+        )
     timings["02_index"] = round(time.perf_counter() - t, 1)
     if shared_dir is not None and not reused:
         _publish_shared(shared_dir, run_dir)

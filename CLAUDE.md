@@ -28,7 +28,7 @@ ever contains the key.
 | `src/pine/parsers/docling.py` | remote Docling API transform (cluster) |
 | `src/pine/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
 | `src/pine/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
-| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `judge` (LLM answer extraction and LLM judge over saved answers; prompts in `agent/prompts/`), `baseline` (document-in-the-prompt baselines, no agent), `runner`, `visual_samples` (HTML page) |
+| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `lean_index` (default index: Docling structure in code + a transcription of each large image; see INDEX.md), `index` (the original model-summarised index, `--index full`), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `judge` (LLM answer extraction and LLM judge over saved answers; prompts in `agent/prompts/`), `baseline` (document-in-the-prompt baselines, no agent), `runner`, `visual_samples` (HTML page) |
 | `usage/0N_*.py` | stateless CLI stages (00 dataset, 01 Docling preprocess, 02 agent, 03 visual page; `B0_evaluation.py` is the single-pass VLM baseline, not a stage); `02_agent_qa.py` runs the agent (full dataset or a selection), `03_visual_samples.py` builds the visual-samples page; `04_judge.py` rescores the saved answers of any batch or baseline folder with an LLM (no model rerun), `B1_mmlongbench_baseline.py` runs the document-in-the-prompt baselines |
 | `sample_sets/*.json` | named, exact lists of (doc_id, question) so an experiment is replicable |
 | `tests/` | pytest; `ci/` the check scripts |
@@ -125,6 +125,7 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
 
 ## Navigator and verifier (current design)
 
+- **Index (default `--index lean`)**: page records and a flat outline from Docling headings, passage-level BM25, and one vision transcription per large image (stored as `visual_text`, shown to the navigator as a vision note). `--index full` is the original page-summary index. Experiments and numbers: `INDEX.md`.
 - **Procedural navigator (default, `--navigator procedural`)**: code reads the plan's anchor pages
   (forced and carried-over pages first, topped up to 6 with the locator's next ranked pages) and decides
   which pages get a vision reading (no text, referenced figure, image-led page, or visual page when the plan
