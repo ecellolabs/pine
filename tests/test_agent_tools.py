@@ -877,6 +877,8 @@ def test_claude_models_do_not_receive_temperature(tmp_path: Path) -> None:
             model, model_settings=ModelSettings(temperature=0.0, max_tokens=50)
         ).run_sync("hi")
     assert "temperature" not in seen[0] and seen[1].get("temperature") == 0.0
+    # Claude always thinks: a 50-token answer budget is raised so thinking cannot use it up
+    assert seen[0]["max_tokens"] >= 4000 and seen[1]["max_tokens"] == 50
 
 
 def test_api_keys_are_masked_in_logged_command() -> None:
@@ -1077,3 +1079,25 @@ def test_vision_evidence_is_not_relabelled_as_page_text(tmp_path: Path) -> None:
         2,
     )
     assert v["quote_checks"][0]["source"] is None
+
+
+def test_a_reworded_answer_does_not_replace_the_concise_one() -> None:
+    from pine.agent.verifier import only_rewords
+
+    later = '["White", "10 percentage points (59% to 49%)"]'
+    assert only_rewords('["White", "10%"]', later)
+    assert not only_rewords('["2", "5"]', '["2", "5", "7"]')  # a completed list is new
+    assert not only_rewords("4", "5 steps")
+
+
+def test_strict_answer_rules_are_on_for_claude_only(tmp_path: Path) -> None:
+    from pine.agent.orchestrator import decide_instructions
+    from pine.agent.verifier import verify_instructions
+
+    slm = AgentSettings(output_dir=tmp_path, text_model="qwen/qwen3.5-9b")
+    claude = AgentSettings(output_dir=tmp_path, text_model="claude-opus-5-5")
+    assert not slm.use_strict_answers() and claude.use_strict_answers()
+    assert "only the value asked for" not in decide_instructions(False)
+    assert "premise does not hold" in decide_instructions(True)
+    assert "corrects the question's premise" not in verify_instructions(False)
+    assert "corrects the question's premise" in verify_instructions(True)
