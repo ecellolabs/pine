@@ -402,3 +402,33 @@ def test_judge_prompt_says_the_percent_sign_is_optional() -> None:
 
     assert "31, 31% and 0.31 are all the same value" in JUDGE_PROMPT
     assert "Gold answer: 31%" in JUDGE_PROMPT
+
+
+def test_index_is_built_without_thinking_when_asked(tmp_path: Path) -> None:
+    from pine.agent.common import AgentSettings
+    from pine.agent.index import index_settings
+
+    on = AgentSettings(
+        output_dir=tmp_path,
+        reasoning=True,
+        thinking_sampling=True,
+        max_tokens_scale=20.0,
+    )
+    assert index_settings(on) is on  # default: the index follows the run's settings
+    off = AgentSettings(
+        output_dir=tmp_path,
+        reasoning=True,
+        thinking_sampling=True,
+        max_tokens_scale=20.0,
+        index_reasoning=False,
+    )
+    idx = index_settings(off)
+    assert (
+        idx.reasoning is False
+        and idx.thinking_sampling is False
+        and idx.max_tokens_scale == 1.0
+    )
+    assert (
+        off.reasoning is True and off.max_tokens_scale == 20.0
+    )  # the run's own settings are untouched
+    assert idx.text_model == off.text_model and idx.api_url == off.api_url
