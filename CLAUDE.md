@@ -154,6 +154,14 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
   extraction prompt followed by the rules instead (`agent/prompts/`, Apache-2.0 notice there).
 - Use a judge that is not the model being scored. `usage/04_judge.py` rescoring saved answers from older
   runs without rerunning anything; the manifest, summary and visual page report `score`.
+- **Project judge: gpt-oss (open weights), not Opus.** We score with `openai/gpt-oss-120b`, so results are
+  reproducible with open models and need no `ANTHROPIC_API_KEY`. It is a reasoning model: give it a bigger
+  reply budget and a low effort. Inside a run (same OpenRouter key as the agent):
+  `--judge-model openai/gpt-oss-120b --judge-max-tokens 2000 --judge-extra-body '{"reasoning_effort": "low"}'`
+  (on a vLLM server also pass `--judge-api-url http://<node>:<port>/v1`). To rescore saved answers without
+  rerunning the agent: `uv run usage/04_judge.py <batch> --api-url https://openrouter.ai/api/v1 --model openai/gpt-oss-120b --max-tokens 2000 --extra-body '{"reasoning_effort": "low"}'` (key from `$OPENROUTER_API_KEY`).
+  The `claude-*` judge path stays in the code but is not used for reported numbers; scores from different
+  judges are not comparable, so re-score older batches with gpt-oss before comparing them.
 
 ## Conventions
 
