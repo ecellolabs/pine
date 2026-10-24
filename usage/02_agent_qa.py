@@ -308,6 +308,14 @@ def main() -> None:
         help="Multiply every call's max_tokens (use ~6 for reasoning models, which spend the budget thinking).",
     )
     parser.add_argument(
+        "--index-no-reasoning",
+        action="store_true",
+        help=(
+            "Build the page index with thinking off while the planner, navigator and verifier "
+            "keep it on (index calls are short and one per page; thinking there only costs time)."
+        ),
+    )
+    parser.add_argument(
         "--thinking-sampling",
         action="store_true",
         help=(
@@ -438,6 +446,7 @@ def main() -> None:
         navigator=args.navigator,
         max_tokens_scale=args.max_tokens_scale,
         thinking_sampling=args.thinking_sampling,
+        index_reasoning=not args.index_no_reasoning,
         presence_penalty=args.presence_penalty,
         request_timeout_s=args.request_timeout,
         judge_model=args.judge_model,
