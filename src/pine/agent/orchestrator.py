@@ -617,6 +617,31 @@ Choose one action:
 - "search": the notes do not hold the answer but other pages of the document might. Give 2-4 short keyword queries. {search_rule}
 - "abstain": the notes show that the document does not contain the information."""
 
+# strict answer rules (AgentSettings.use_strict_answers): the bare value, and abstain on a
+# false premise; applied on top of the default text so default runs keep their prompt
+_ANSWER_DEFAULT = "exactly as asked (not to a similar question), and in evidence"
+_ANSWER_STRICT = (
+    "exactly as asked (not to a similar question): only the value asked for, with no "
+    "explanation; for a list, the items only. In evidence give"
+)
+_ABSTAIN_DEFAULT = "the document does not contain the information."
+_ABSTAIN_STRICT = (
+    "the document does not contain the information. Also abstain when the question's "
+    "premise does not hold in the document (it asks about an object, person, date, version "
+    "or figure that the notes show is absent or different): do not answer a corrected or "
+    "alternative version of the question."
+)
+
+
+def decide_instructions(strict: bool) -> str:
+    """The decide prompt template, with the strict answer rules when ``strict``."""
+    if not strict:
+        return DECIDE_INSTRUCTIONS
+    return DECIDE_INSTRUCTIONS.replace(_ANSWER_DEFAULT, _ANSWER_STRICT).replace(
+        _ABSTAIN_DEFAULT, _ABSTAIN_STRICT
+    )
+
+
 SEARCH_ALLOWED = "You can search once."
 SEARCH_USED = 'No search is left: choose "answer" or "abstain".'
 
@@ -773,6 +798,7 @@ async def _procedural(
     deps: NavDeps,
     doc_title: str,
     feedback: str | None,
+    strict: bool = False,
 ) -> FinalAnswer:
     """Read the plan's anchor pages, decide; on "search" read the best new pages once and
     decide again. Failures end in an abstention, never in a retry loop."""
@@ -793,7 +819,7 @@ async def _procedural(
     await _read_into_notes(deps, first_pass[:MAX_PASS_PAGES], notes)
     decision: Decision | None = None
     for search_left in (True, False):
-        instructions = DECIDE_INSTRUCTIONS.format(
+        instructions = decide_instructions(strict).format(
             doc_title=doc_title,
             n_pages=deps.n_pages,
             search_rule=SEARCH_ALLOWED if search_left else SEARCH_USED,
@@ -1003,6 +1029,7 @@ def run_orchestrator(
                 deps,
                 index["doc_title"],
                 prior_feedback,
+                settings.use_strict_answers(),
             )
         )
         return _finish_round(deps, final_obj, False, round_no, step_dir, log)

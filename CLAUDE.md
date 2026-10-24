@@ -138,6 +138,10 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
   first anchors; a re-plan happens only when a gap names a page not yet covered.
 - **Runner**: carries the previous round's cited pages forward; keeps an accepted answer if a coverage round
   does not improve on it (not if that round reached the same answer and had it rejected).
+- **Claude models** (`claude-*`): they always think, so every call's answer budget is raised to at least
+  4,000 tokens (8x the usual limit) and sampling parameters are stripped. `--strict-answers` (default: on for
+  `claude-*` text models only) adds two prompt rules (bare value, abstain on a false premise) and keeps the
+  first wording when a coverage round only rewords an accepted answer. Default small-model runs are unchanged.
 - OpenRouter + qwen3.5 with `--no-reasoning`: pass `--ignore-provider Together` (it rejects reasoning-off
   plus a required tool call). A `claude-*` judge uses the Anthropic SDK and reads `ANTHROPIC_API_KEY`.
 - Sample sets: `s3` is ten questions on ten documents unused by `s0`/`s2`, for testing changes on unseen data.

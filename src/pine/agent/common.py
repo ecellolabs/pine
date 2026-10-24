@@ -59,6 +59,11 @@ class AgentSettings:
     # OpenRouter providers never to route to (e.g. Together rejects qwen3.5 with reasoning
     # off and a required tool call). Empty keeps OpenRouter's default routing.
     openrouter_ignore_providers: list[str] = field(default_factory=list)
+    # Strict answer rules: decide gives the bare value and abstains on a false premise, the
+    # verifier rejects an answer to a corrected question, and a coverage round that only
+    # rewords an accepted answer keeps the first wording. None = on for claude-* text models
+    # only, so the default small-model runs keep their prompts and behaviour.
+    strict_answers: bool | None = None
     # Multiplies every call's max_tokens; reasoning models need room to think before answering.
     max_tokens_scale: float = 1.0
     # True replaces every call's greedy decoding with the Qwen3.5 model card's thinking-mode
@@ -86,6 +91,11 @@ class AgentSettings:
     model_factory: Callable[[str], Model] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
+    def use_strict_answers(self) -> bool:
+        if self.strict_answers is not None:
+            return self.strict_answers
+        return self.text_model.startswith("claude-")
+
     @property
     def llm_cache_dir(self) -> Path:
         return self.cache_dir or (self.output_dir / ".cache" / "llm")
@@ -106,6 +116,7 @@ class AgentSettings:
             "reasoning": self.reasoning,
             "openrouter_ignore_providers": self.openrouter_ignore_providers,
             "max_tokens_scale": self.max_tokens_scale,
+            "strict_answers": self.use_strict_answers(),
             "thinking_sampling": self.thinking_sampling,
             "presence_penalty": self.presence_penalty,
             "request_timeout_s": self.request_timeout_s,

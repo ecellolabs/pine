@@ -17,6 +17,7 @@ Writes 05_evidence_verifier/verification_round{N}.json, llm_calls.jsonl, verifie
 from __future__ import annotations
 
 import difflib
+import json
 import logging
 import re
 from pathlib import Path
@@ -63,6 +64,23 @@ Evidence (ledger entries recorded by the agent):
 
 Cited page content:
 {pages}"""
+
+# strict answer rules only (AgentSettings.use_strict_answers), inserted before the
+# not_answerable rule so default runs keep their prompt
+_PREMISE_RULE = (
+    "If the proposed answer corrects the question's premise or answers a different scenario "
+    'than the one asked (another object, date, version or condition), return "not_supported".\n'
+)
+_NOT_ANSWERABLE_RULE = "If the proposed status is not_answerable:"
+
+
+def verify_instructions(strict: bool) -> str:
+    if not strict:
+        return VERIFY_INSTRUCTIONS
+    return VERIFY_INSTRUCTIONS.replace(
+        _NOT_ANSWERABLE_RULE, _PREMISE_RULE + _NOT_ANSWERABLE_RULE
+    )
+
 
 REREAD_INSTRUCTIONS = """You read one region of a document page. Answer only from what is visible in the image. The region may hold only part of the answer: other parts can be on other pages of the document.
 First list every value or fact visible here that is relevant to the question, one per line, each with its label exactly as shown.
@@ -366,6 +384,29 @@ def _same_answer(a: str, b: str) -> bool:
     return bool(ca and cb) and (ca in cb or cb in ca)
 
 
+def only_rewords(earlier: str, later: str) -> bool:
+    """``later`` repeats every word and number of ``earlier`` and only adds to it (an
+    explanation, a unit), without adding list items: the same answer, said less concisely."""
+    if not _norm(earlier) or not _words(earlier) <= _words(later):
+        return False
+    nums_later = _readings(later)
+    if not all(any(_close(x, y) for y in nums_later) for x in _readings(earlier)):
+        return False
+    return len(_parse_items(earlier)) == len(_parse_items(later))
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z]+", text.lower()))
+
+
+def _parse_items(answer: str) -> list[str]:
+    try:
+        value = json.loads(answer)
+    except ValueError:
+        return [answer]
+    return [str(v) for v in value] if isinstance(value, list) else [answer]
+
+
 def compare_reread(
     answer: str, quote: str, reread: str, multi_page: bool
 ) -> tuple[str, str]:
@@ -662,7 +703,7 @@ def run_verifier(
     agent: Agent[None, Verdict] = Agent(
         model,
         output_type=ToolOutput(Verdict, name="Verdict"),
-        instructions=VERIFY_INSTRUCTIONS,
+        instructions=verify_instructions(settings.use_strict_answers()),
         retries=1,
         model_settings=ModelSettings(temperature=0.0, max_tokens=400),
     )

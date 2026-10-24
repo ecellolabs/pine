@@ -302,6 +302,12 @@ def main() -> None:
         help="OpenRouter provider to never route to; repeatable (e.g. Together, which rejects qwen3.5 with --no-reasoning and a required tool call).",
     )
     parser.add_argument(
+        "--strict-answers",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Bare-value answers, abstain on a false premise (default: on for claude-* text models only).",
+    )
+    parser.add_argument(
         "--max-tokens-scale",
         type=float,
         default=1.0,
@@ -437,6 +443,7 @@ def main() -> None:
         index_concurrency=args.index_concurrency,
         navigator=args.navigator,
         max_tokens_scale=args.max_tokens_scale,
+        strict_answers=args.strict_answers,
         thinking_sampling=args.thinking_sampling,
         presence_penalty=args.presence_penalty,
         request_timeout_s=args.request_timeout,

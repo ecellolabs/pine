@@ -41,7 +41,7 @@ from pine.agent.orchestrator import run_orchestrator
 from pine.agent.parser import run_parser
 from pine.agent.planner import run_planner
 from pine.agent.scoring import run_eval
-from pine.agent.verifier import run_verifier
+from pine.agent.verifier import only_rewords, run_verifier
 
 
 @dataclass
@@ -408,10 +408,18 @@ def run_sample(
         log.info(
             "the same answer was rejected in a later round: not falling back to it"
         )
+    # a coverage round that only re-worded the accepted answer does not replace its wording
+    reworded = (
+        settings.use_strict_answers()
+        and fallback is not None
+        and accepted
+        and final["status"] == "answered"
+        and only_rewords(fallback[0]["answer"], final["answer"])
+    )
     if (
         fallback is not None
         and not rejected_again
-        and not (accepted and final["status"] == "answered")
+        and (reworded or not (accepted and final["status"] == "answered"))
     ):
         # the coverage round found nothing better: keep the answer it was meant to check
         final, kept = fallback
