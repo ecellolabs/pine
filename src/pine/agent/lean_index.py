@@ -41,7 +41,7 @@ from pine.agent.common import (
     setup_logger,
     write_json,
 )
-from pine.agent.index import _assign_ids, _outline_md
+from pine.agent.index import _assign_ids, _outline_md, index_settings
 from pine.agent.llm import CALL_PURPOSE, traced_model
 
 BIG_PICTURE = 0.05  # share of the page area a picture needs to be worth reading
@@ -182,7 +182,7 @@ def run_lean_index(
             jobs.append((p, None))
 
     vision_model = traced_model(
-        settings,
+        index_settings(settings),  # --index-no-reasoning applies to the lean index too
         settings.vision_model,
         step_dir=step_dir,
         ledger=ledger,
