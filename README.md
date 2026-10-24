@@ -229,6 +229,22 @@ uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s0 --api-url http://se
   an existing batch, or a shared `--cache-dir`) delete its `.cache/llm` first. Keep the cache only
   when nothing about the agent changed and you just want the folders rebuilt.
 - `--max-rounds`, `--max-tool-calls` — agent budgets (default 2 rounds × 12 tool calls).
+- **Scoring / judge** — without `--judge-model` the answers are scored by the rule-based port of the
+  official MMLongBench-Doc scorer. The project's LLM judge is the open-weights **gpt-oss** (not Opus):
+
+  ```bash
+  # judge inside the run (same OpenRouter key as the agent)
+  uv run usage/02_agent_qa.py mmlongbench_doc --max-samples s3 \
+      --judge-model openai/gpt-oss-120b --judge-max-tokens 2000 \
+      --judge-extra-body '{"reasoning_effort": "low"}'
+  # or rescore the saved answers of an existing batch, no agent rerun
+  uv run usage/04_judge.py agent_runs/<batch> --api-url https://openrouter.ai/api/v1 \
+      --model openai/gpt-oss-120b --max-tokens 2000 --extra-body '{"reasoning_effort": "low"}'
+  ```
+
+  gpt-oss is a reasoning model, so it needs the larger reply budget (its thinking counts before the verdict).
+  On a vLLM server add `--judge-api-url http://<node>:<port>/v1`. `result.json` keeps the rule-based score
+  as `score_official_rule`; scores from different judges are not comparable.
 
 ### Step 4 — `usage/03_visual_samples.py`
 
