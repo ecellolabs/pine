@@ -284,6 +284,13 @@ def main() -> None:
         help="Disable model reasoning/thinking (OpenRouter reasoning flag, vLLM enable_thinking=false), for hybrid-thinking models such as qwen3.5.",
     )
     parser.add_argument(
+        "--index",
+        dest="index_mode",
+        choices=["lean", "full"],
+        default="lean",
+        help="lean (default): Docling structure plus a transcription of each large image; full: the original model page summaries + section tree (see INDEX.md).",
+    )
+    parser.add_argument(
         "--navigator",
         choices=["procedural", "agentic"],
         default="procedural",
@@ -294,6 +301,11 @@ def main() -> None:
         type=int,
         default=8,
         help="Index page summaries requested at once (lower it for a small vLLM server).",
+    )
+    parser.add_argument(
+        "--reasoning-roles",
+        default="",
+        help="Comma-separated roles that think even with --no-reasoning: planner, navigator, verifier.",
     )
     parser.add_argument(
         "--ignore-provider",
@@ -434,8 +446,12 @@ def main() -> None:
         rapidocr_backend=args.rapidocr_backend,
         reasoning=not args.no_reasoning,
         openrouter_ignore_providers=args.ignore_provider,
+        reasoning_roles=[
+            r.strip() for r in args.reasoning_roles.split(",") if r.strip()
+        ],
         index_concurrency=args.index_concurrency,
         navigator=args.navigator,
+        index_mode=args.index_mode,
         max_tokens_scale=args.max_tokens_scale,
         thinking_sampling=args.thinking_sampling,
         presence_penalty=args.presence_penalty,

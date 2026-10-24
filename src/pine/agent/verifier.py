@@ -542,6 +542,7 @@ def run_verifier(
         ledger=ledger_cost,
         logger=log,
         step_name="05_verifier",
+        role="verifier",
     )
 
     pages_md = {

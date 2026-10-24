@@ -694,6 +694,28 @@ async def _read_into_notes(
                 "text": text,
             }
         )
+    # lean index: a page read without a fresh image reading still brings the vision text
+    # stored in the index, as a vision note the verifier checks like any other
+    for p in pages:
+        stored = deps.index["pages"][str(p)].get("visual_text") or ""
+        if stored and p not in image_pages:
+            text = f"[from the index: vision model reading of the page images] {stored}"
+            deps.image_inspections.append(
+                {
+                    "page": p,
+                    "question": "(index visual text)",
+                    "image": "",
+                    "result": text,
+                }
+            )
+            notes.append(
+                {
+                    "id": len(notes) + 1,
+                    "page": p,
+                    "source": "image_inspection",
+                    "text": text,
+                }
+            )
 
 
 def _notes_prompt(
@@ -937,6 +959,7 @@ def run_orchestrator(
         ledger=ledger,
         logger=log,
         step_name="04_orchestrator",
+        role="navigator",
     )
     vision_model = traced_model(
         settings,

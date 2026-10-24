@@ -128,6 +128,43 @@ def build_page_corpus(
     return docs
 
 
+PASSAGE_WORDS = (
+    150  # a passage is about a paragraph; long paragraphs are cut into windows
+)
+
+
+def build_passage_corpus(
+    index: dict[str, Any], pages_md: dict[int, str]
+) -> dict[str, str]:
+    """Paragraph-sized passages ``"<page>#<i>"`` for the lean index, each with the page's
+    title and captions repeated (as in ``build_page_corpus``) so 'Figure N' still ranks the
+    caption page first. A page's stored image text adds its own passages."""
+    docs: dict[str, str] = {}
+    for p_str, ps in index["pages"].items():
+        p = int(p_str)
+        figs = " ".join(ps.get("figures") or [])
+        tabs = " ".join(ps.get("tables") or [])
+        header = f"{ps.get('title', '')} " * 3 + f"{figs} {tabs} " * 5
+        paragraphs = [b for b in pages_md.get(p, "").split("\n\n") if b.strip()]
+        paragraphs += [
+            b for b in (ps.get("visual_text") or "").split("\n") if b.strip()
+        ]
+        chunks: list[str] = []
+        buf: list[str] = []
+        for para in paragraphs:
+            words = para.split()
+            for i in range(0, max(len(words), 1), PASSAGE_WORDS):
+                buf += words[i : i + PASSAGE_WORDS]
+                if len(buf) >= 40:
+                    chunks.append(" ".join(buf))
+                    buf = []
+        if buf or not chunks:
+            chunks.append(" ".join(buf))
+        for i, chunk in enumerate(chunks):
+            docs[f"{p}#{i}"] = f"{header} {chunk}"
+    return docs
+
+
 def _ref_labels(ps: dict[str, Any], key: str) -> list[int]:
     """Figure/table numbers whose caption sits on this page."""
     out: list[int] = []
@@ -190,6 +227,11 @@ class RegionLocator:
         self.sections = walk_sections(index)
         self.page_docs = build_page_corpus(index, pages_md or {})
         self.page_bm25 = BM25(self.page_docs)
+        # a lean index ranks a page by its best passage: a long page no longer dilutes
+        # the one paragraph that matches
+        self.passage_bm25: BM25 | None = None
+        if index.get("index_kind") == "lean":
+            self.passage_bm25 = BM25(build_passage_corpus(index, pages_md or {}))
         sec_docs: dict[str, str] = {}
         for s in self.sections:
             parts = [s["title"]] * 3
@@ -240,6 +282,12 @@ class RegionLocator:
 
     # ---- lexical ranking
     def rank_pages(self, query: str, k: int = 5) -> list[tuple[int, float]]:
+        if self.passage_bm25 is not None:
+            best: dict[int, float] = {}
+            for pid, s in self.passage_bm25.search(query, k=k * 10):
+                page = int(str(pid).split("#")[0])
+                best[page] = max(best.get(page, 0.0), s)
+            return sorted(best.items(), key=lambda x: -x[1])[:k]
         return [(int(p), s) for p, s in self.page_bm25.search(query, k=k)]
 
     def rank_sections(self, query: str, k: int = 3) -> list[tuple[str, float]]:

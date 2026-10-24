@@ -156,6 +156,7 @@ def run_planner(
         ledger=ledger,
         logger=log,
         step_name="03_planner",
+        role="planner",
     )
     model.purpose = f"plan_round{round_no}"
     model.round_no = round_no
