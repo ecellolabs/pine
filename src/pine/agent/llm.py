@@ -44,6 +44,10 @@ _PARAMS_ADAPTER: TypeAdapter[ModelRequestParameters] = TypeAdapter(
 # per-task purpose for calls one TracedModel makes concurrently (index page summaries);
 # overrides ``TracedModel.purpose`` inside the task that sets it
 CALL_PURPOSE: ContextVar[str | None] = ContextVar("call_purpose", default=None)
+# Claude models think on every call: their answer budget is scaled up and never below
+# the floor (billing is per token used, so the headroom costs nothing when unused)
+CLAUDE_THINKING_SCALE = 8.0
+CLAUDE_MIN_MAX_TOKENS = 4000
 _VOLATILE_KEYS = {"timestamp", "run_id", "conversation_id", "metadata", "state"}
 
 
@@ -313,22 +317,34 @@ class TracedModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
-        if (
-            model_settings
-            and "temperature" in model_settings
-            and self.wrapped.model_name.startswith("claude-")
-        ):
-            # Claude models reject the (deprecated) temperature parameter with a 400
-            trimmed = dict(model_settings)
-            del trimmed["temperature"]
-            model_settings = cast(ModelSettings, trimmed)
         model_settings = apply_thinking_sampling(model_settings, self.run_settings)
         scale = self.run_settings.max_tokens_scale
+        floor = 0
+        if model_settings and self.wrapped.model_name.startswith("claude-"):
+            # current Claude models reject sampling parameters with a 400 and always think,
+            # so a small answer budget (400 for the verdict) runs out before any answer
+            trimmed = {
+                k: v
+                for k, v in model_settings.items()
+                if k not in ("temperature", "top_p")
+            }
+            extra = {
+                k: v
+                for k, v in (trimmed.get("extra_body") or {}).items()
+                if k != "top_k"
+            }
+            if extra:
+                trimmed["extra_body"] = extra
+            else:
+                trimmed.pop("extra_body", None)
+            model_settings = cast(ModelSettings, trimmed)
+            scale = max(scale, CLAUDE_THINKING_SCALE)
+            floor = CLAUDE_MIN_MAX_TOKENS
         if scale != 1.0 and model_settings and model_settings.get("max_tokens"):
             model_settings = ModelSettings(
                 **{
                     **model_settings,
-                    "max_tokens": int(model_settings["max_tokens"] * scale),
+                    "max_tokens": max(floor, int(model_settings["max_tokens"] * scale)),
                 }
             )
         key = self._cache_key(messages, model_settings, model_request_parameters)
