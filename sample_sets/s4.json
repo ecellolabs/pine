@@ -1,0 +1,709 @@
+{
+  "name": "s4",
+  "dataset": "mmlongbench_doc",
+  "description": "100 MMLongBench-Doc questions drawn uniformly at random (seed 20261024) from the questions on documents that s0, s1, s2 and s3 do not use, so the documents are unseen. A mid-size set between s3 (10) and the full 1,091. run_id is the run id of the same question in the full runs, so results can be paired question by question.",
+  "created": "2026-10-24",
+  "author": "PINE project",
+  "samples": [
+    {
+      "run_id": "train_05-03-18-political-relea_q02",
+      "doc_id": "05-03-18-political-release.pdf",
+      "question": "According to the survey on April 25 - May 1, 2018, what are the domains with the highest percentage that adults are very confident and not at all confident of Donald Trump's govenment? Please write the answer in the list format and with alphabetical order, e.g., [\"A\",\"B\"]",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "train_0b85477387a9d0cc33fca0f4_q01",
+      "doc_id": "0b85477387a9d0cc33fca0f4becaa0e5.pdf",
+      "question": "Who is the commanding officer at the last page?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 16
+    },
+    {
+      "run_id": "train_11-21-16-Updated-Post-El_q00",
+      "doc_id": "11-21-16-Updated-Post-Election-Release.pdf",
+      "question": "What is the highest point of % of voters who say there was more mudslinging than in past elections?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 45
+    },
+    {
+      "run_id": "train_2005.12872v3_q01",
+      "doc_id": "2005.12872v3.pdf",
+      "question": "When number of visible instances = 60, which category has the largest proportion of missed instances?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 26
+    },
+    {
+      "run_id": "train_2005.12872v3_q04",
+      "doc_id": "2005.12872v3.pdf",
+      "question": "According to Fig 10 architecture of DETR’s transformer, what is the colour of the Multi-Head Self-Attention layer?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 26
+    },
+    {
+      "run_id": "train_2023.acl-long.386_q01",
+      "doc_id": "2023.acl-long.386.pdf",
+      "question": "What are the program execution function names with grey background in our proposed model in the first figure in the paper?  Please write down the answer in a list format with ascending alphabetical order, e.g., [\"a\",\"b\"]",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 24
+    },
+    {
+      "run_id": "train_2023.acl-long.386_q06",
+      "doc_id": "2023.acl-long.386.pdf",
+      "question": "Which type of semantic errors has the lowest total percentages in FEVER dataset?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 24
+    },
+    {
+      "run_id": "train_2023.findings-emnlp.248_q04",
+      "doc_id": "2023.findings-emnlp.248.pdf",
+      "question": "How many prompt examples are given in the Appendix? ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 19
+    },
+    {
+      "run_id": "train_2023.findings-emnlp.248_q05",
+      "doc_id": "2023.findings-emnlp.248.pdf",
+      "question": "When using GPT-4 as the base language model, how many datasets does Logic-LM (without self-refinement) outperform the two baseline models in? ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 19
+    },
+    {
+      "run_id": "train_2023.findings-emnlp.248_q06",
+      "doc_id": "2023.findings-emnlp.248.pdf",
+      "question": "In this paper, what symbolic solver is used to implement the logic programming module shown in Figure 1?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 19
+    },
+    {
+      "run_id": "train_2024.ug.eprospectus_q01",
+      "doc_id": "2024.ug.eprospectus.pdf",
+      "question": "Among the top 10 reasons why NTU smart campus is for you, which is the reason that does not include any person in the corresponding figure?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_2024.ug.eprospectus_q03",
+      "doc_id": "2024.ug.eprospectus.pdf",
+      "question": "Student from which major has a picture of playing tennis in this brochure?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_2303.05039v2_q01",
+      "doc_id": "2303.05039v2.pdf",
+      "question": "How many items in total of Shopee related datasets in the paper? Please write the answer in int format. ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 9
+    },
+    {
+      "run_id": "train_2303.05039v2_q03",
+      "doc_id": "2303.05039v2.pdf",
+      "question": "What is the average number of words per user used for the experiments in the dataset from which a data sample of a user's LIWC score is shown? Please write the answer in float format.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 9
+    },
+    {
+      "run_id": "train_2303.05039v2_q07",
+      "doc_id": "2303.05039v2.pdf",
+      "question": "What is the evaluation metric that has highest number for the method located at the bottom of the model structure figure across the three datasets? Please write down the answer with string format.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 9
+    },
+    {
+      "run_id": "train_2303.08559v2_q05",
+      "doc_id": "2303.08559v2.pdf",
+      "question": "Tell me the prompt template used for label 'Contact.Meet' in purely LLM-based method of this work. ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 30
+    },
+    {
+      "run_id": "train_2303.08559v2_q06",
+      "doc_id": "2303.08559v2.pdf",
+      "question": "If I drop the green module shown in Figure 6,  what is the absolute percentage drop on 100-shot TACREV setting?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 30
+    },
+    {
+      "run_id": "train_2310.07609v1_q00",
+      "doc_id": "2310.07609v1.pdf",
+      "question": "How many numbers with blue color are mentioned in the example figure of question-guidue reasoning?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 10
+    },
+    {
+      "run_id": "train_2311.16502v3_q04",
+      "doc_id": "2311.16502v3.pdf",
+      "question": "According to this paper,  What's the GPT-4V's performance difference between CS subject and math subject on MMMU datasets? ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 117
+    },
+    {
+      "run_id": "train_2311.16502v3_q12",
+      "doc_id": "2311.16502v3.pdf",
+      "question": "According to this paper, among nice different datasets in Fig 4, which one can reflect the highest efficiency?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 117
+    },
+    {
+      "run_id": "train_2312.10997v5_q00",
+      "doc_id": "2312.10997v5.pdf",
+      "question": "In the figure that has a tree shape, what is the name of the branch that has the least leafs?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 21
+    },
+    {
+      "run_id": "train_2312.10997v5_q03",
+      "doc_id": "2312.10997v5.pdf",
+      "question": "What is the paper that proposes the method that has a retrieval granularity of phrase and augmentation stage of tuning?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 21
+    },
+    {
+      "run_id": "train_2405.09818v1_q04",
+      "doc_id": "2405.09818v1.pdf",
+      "question": "How many subplots are related to obvious loss spikies?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_2405.09818v1_q07",
+      "doc_id": "2405.09818v1.pdf",
+      "question": "At which step, the loss spikes when without QK-norm?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_3276a5b991c49cf5f9a4af0f_q00",
+      "doc_id": "3276a5b991c49cf5f9a4af0f7d6fce67.pdf",
+      "question": "Which officer verify and signed the complaint?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 16
+    },
+    {
+      "run_id": "train_3276a5b991c49cf5f9a4af0f_q02",
+      "doc_id": "3276a5b991c49cf5f9a4af0f7d6fce67.pdf",
+      "question": "what is the CA, Bar no of the report?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 16
+    },
+    {
+      "run_id": "train_379f44022bb27aa53efd5d32_q04",
+      "doc_id": "379f44022bb27aa53efd5d322c7b57bf.pdf",
+      "question": "List all pages on which the logo of CQC locates. The answer should be formatted as a list like ['Page 2', 'Page 4'].",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "train_698bba535087fa9a7f9009e1_q00",
+      "doc_id": "698bba535087fa9a7f9009e172a7f763.pdf",
+      "question": "What date is mentioned on the second page? Format the date as YYYY-MM",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_698bba535087fa9a7f9009e1_q03",
+      "doc_id": "698bba535087fa9a7f9009e172a7f763.pdf",
+      "question": "What was the population of the city with the largest font on the map on Page 3 in 1890? Answer in int format",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_936c0e2c2e6c8e0c07c51bfa_q05",
+      "doc_id": "936c0e2c2e6c8e0c07c51bfaf7fd0a83.pdf",
+      "question": "What service specifications are associated with the SRM Component of Information Sharing?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 15
+    },
+    {
+      "run_id": "train_ACTIVISIONBLIZZARD_2019__q03",
+      "doc_id": "ACTIVISIONBLIZZARD_2019_10K.pdf",
+      "question": "what is Interest Coverage Ratio for Activsion Blizzard In F2019?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 198
+    },
+    {
+      "run_id": "train_AMAZON_2017_10K_q04",
+      "doc_id": "AMAZON_2017_10K.pdf",
+      "question": "what is Amazon's FY2017 effective tax rate? round your answer to three decimal",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 85
+    },
+    {
+      "run_id": "train_BRO-GL-MMONEY_q02",
+      "doc_id": "BRO-GL-MMONEY.pdf",
+      "question": "What are the currencies shown in Multiple settlement options?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 16
+    },
+    {
+      "run_id": "train_BRO-GL-MMONEY_q05",
+      "doc_id": "BRO-GL-MMONEY.pdf",
+      "question": "Which type of chart is shown in the what-if analysis?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 16
+    },
+    {
+      "run_id": "train_COSTCO_2021_10K_q09",
+      "doc_id": "COSTCO_2021_10K.pdf",
+      "question": "What is total liabilities for costco in FY 2021?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 76
+    },
+    {
+      "run_id": "train_COSTCO_2021_10K_q12",
+      "doc_id": "COSTCO_2021_10K.pdf",
+      "question": "How much shares did COSTCO repurchase in FY2021?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 76
+    },
+    {
+      "run_id": "train_GPL-Graduate-Studies-Pro_q02",
+      "doc_id": "GPL-Graduate-Studies-Professional-Learning-Brochure-Jul-2021.pdf",
+      "question": "How many male and female are there in page 17? Please write the answer in list format, e.g., [\"1\",\"2\"]",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "train_GPL-Graduate-Studies-Pro_q04",
+      "doc_id": "GPL-Graduate-Studies-Professional-Learning-Brochure-Jul-2021.pdf",
+      "question": "In the Leadership program section, how many male are there with glasses? Please write the answer in floqt format.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "train_GPL-Graduate-Studies-Pro_q05",
+      "doc_id": "GPL-Graduate-Studies-Professional-Learning-Brochure-Jul-2021.pdf",
+      "question": "In the figure at Page at the second last, howm many people are standing? ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "train_ISEP_student_handbook_20_q03",
+      "doc_id": "ISEP_student_handbook_2020.pdf",
+      "question": "How many areas do the course requiremnt have?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 24
+    },
+    {
+      "run_id": "train_NETFLIX_2015_10K_q09",
+      "doc_id": "NETFLIX_2015_10K.pdf",
+      "question": "what is operating leases occurred in FY 2015 for Netfilx?Answer in million.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 72
+    },
+    {
+      "run_id": "train_NIKE_2021_10K_q00",
+      "doc_id": "NIKE_2021_10K.pdf",
+      "question": "what is the FY2021 inventory turnover ratio for Nike?Round your answer to two decimal places.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 109
+    },
+    {
+      "run_id": "train_NIKE_2021_10K_q09",
+      "doc_id": "NIKE_2021_10K.pdf",
+      "question": "What are the  key categories that Nike focuses on for their brand product offerings?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 109
+    },
+    {
+      "run_id": "train_NUS-Business-School-BBA-_q05",
+      "doc_id": "NUS-Business-School-BBA-Brochure-2024.pdf",
+      "question": "How many weeks do students need to reach work experience milestone and get 8 units?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 24
+    },
+    {
+      "run_id": "train_NYU_graduate_q07",
+      "doc_id": "NYU_graduate.pdf",
+      "question": "How large student community center can be which residents have access? Give me a number of its square.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 30
+    },
+    {
+      "run_id": "train_PG_20.07.30_U.S.-Views-C_q00",
+      "doc_id": "PG_20.07.30_U.S.-Views-China_final.pdf",
+      "question": "What percentage does Republicans in the United States rate China's response good to the COVID-19 pandemic?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 22
+    },
+    {
+      "run_id": "train_PIP_Seniors-and-Tech-Use_q07",
+      "doc_id": "PIP_Seniors-and-Tech-Use_040314.pdf",
+      "question": "How many 65+ age group people go online 3-5 times per week or Every day in the Pew Research Center’s Internet Project July 18-September 30, 2013 tracking survey?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_PIP_Seniors-and-Tech-Use_q11",
+      "doc_id": "PIP_Seniors-and-Tech-Use_040314.pdf",
+      "question": "What is the gap between male 65+ age group who use internet and  broadband at home in the Pew Research Center’s Internet Project July 18-September 30, 2013 tracking survey? Please write the answer into float format. ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_PI_2017.10.04_Automation_q06",
+      "doc_id": "PI_2017.10.04_Automation_FINAL.pdf",
+      "question": "How many US workers are interested in a robot caregiver for themselves or a family member?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 61
+    },
+    {
+      "run_id": "train_PP_2019.01.17_Trump-econ_q01",
+      "doc_id": "PP_2019.01.17_Trump-economy_FINAL2.pdf",
+      "question": "What is the proportion of people who say they are very confident in Lincoln's ability to handle an international crisis?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 28
+    },
+    {
+      "run_id": "train_PP_2020.08.06_COVID-19-R_q07",
+      "doc_id": "PP_2020.08.06_COVID-19-Restrictions_FINAL-1.pdf",
+      "question": "Are there counties in Florida with more than 100 deaths per 100,000 residents?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 26
+    },
+    {
+      "run_id": "train_Pew-Research-Center_Hisp_q05",
+      "doc_id": "Pew-Research-Center_Hispanic-Identity-Report_12.20.2017.pdf",
+      "question": "What's the averaged percentage of Latinos (Foreign born, Second generation, Third or higher generation) say all or most of their friends are Latinos?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 32
+    },
+    {
+      "run_id": "train_STEPBACK_q00",
+      "doc_id": "STEPBACK.pdf",
+      "question": "How many green bars appear in Figure 1?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 36
+    },
+    {
+      "run_id": "train_STEPBACK_q06",
+      "doc_id": "STEPBACK.pdf",
+      "question": "How many pie charts are there in the paper?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 36
+    },
+    {
+      "run_id": "train_SnapNTell_q05",
+      "doc_id": "SnapNTell.pdf",
+      "question": "How many times do various sizes of the Eiffel Tower appear in the image?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_StudentSupport_Guidebook_q02",
+      "doc_id": "StudentSupport_Guidebook.pdf",
+      "question": "What is the bus route number that appears in the figure of this document?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 44
+    },
+    {
+      "run_id": "train_StudentSupport_Guidebook_q05",
+      "doc_id": "StudentSupport_Guidebook.pdf",
+      "question": "What is the bank names shown in the figure of this document?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 44
+    },
+    {
+      "run_id": "train_User_Manual_1500S_Classi_q03",
+      "doc_id": "User_Manual_1500S_Classic_EN.pdf",
+      "question": "How many types of main menu functions are there?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 108
+    },
+    {
+      "run_id": "train_User_Manual_1500S_Classi_q07",
+      "doc_id": "User_Manual_1500S_Classic_EN.pdf",
+      "question": "How many coffee quality levels can the coffee machine be set to?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 108
+    },
+    {
+      "run_id": "train_User_Manual_1500S_Classi_q08",
+      "doc_id": "User_Manual_1500S_Classic_EN.pdf",
+      "question": "What are the error descriptions corresponding to error numbers 88 and 188?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 108
+    },
+    {
+      "run_id": "train_a5879805d70c854ea4361e43_q04",
+      "doc_id": "a5879805d70c854ea4361e43a84e3bb2.pdf",
+      "question": "What type of court is noted on the cover page?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 15
+    },
+    {
+      "run_id": "train_afe620b9beac86c1027b96d3_q05",
+      "doc_id": "afe620b9beac86c1027b96d31d396407.pdf",
+      "question": "According this document, where are the two plants of Apple Inc. located?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_afe620b9beac86c1027b96d3_q07",
+      "doc_id": "afe620b9beac86c1027b96d31d396407.pdf",
+      "question": "How many companies do Mr. R.A. Shah, Mr. S.V. Shanbhag, and Mr. C.M. Maniar collectively hold directorships of the Board?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_afe620b9beac86c1027b96d3_q08",
+      "doc_id": "afe620b9beac86c1027b96d31d396407.pdf",
+      "question": "Who are the non-executive and independent directors of GODFREY PHILLIPS INDIA LIMITED? Enumerate all of them in a list.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_amb-siteaudits-ds15-1502_q00",
+      "doc_id": "amb-siteaudits-ds15-150204174043-conversion-gate01_95.pdf",
+      "question": "What is the average session duration for desktop?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 41
+    },
+    {
+      "run_id": "train_b3m5kaeqm2w8n4bwcesw-140_q01",
+      "doc_id": "b3m5kaeqm2w8n4bwcesw-140602121350-phpapp02_95.pdf",
+      "question": "What are used for long-distance communication as introduced in this slide?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 21
+    },
+    {
+      "run_id": "train_bariumswallowpresentatio_q01",
+      "doc_id": "bariumswallowpresentation-090810084400-phpapp01_95.pdf",
+      "question": "How many words for parts that start with 'A' are in the figure on slide 11?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 77
+    },
+    {
+      "run_id": "train_bariumswallowpresentatio_q03",
+      "doc_id": "bariumswallowpresentation-090810084400-phpapp01_95.pdf",
+      "question": "What position is the man with the red shirt in the figure on the last page, directly answer 'bottom', 'middle' or 'top'?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 77
+    },
+    {
+      "run_id": "train_bigdatatrends-1207231910_q06",
+      "doc_id": "bigdatatrends-120723191058-phpapp02_95.pdf",
+      "question": "How many tables are there in the whole slides? ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 53
+    },
+    {
+      "run_id": "train_c31e6580d0175ab3f9d99d1f_q02",
+      "doc_id": "c31e6580d0175ab3f9d99d1ff0bfa000.pdf",
+      "question": "How many slides include more than one figure? Here don't consider the charts.  ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_c31e6580d0175ab3f9d99d1f_q07",
+      "doc_id": "c31e6580d0175ab3f9d99d1ff0bfa000.pdf",
+      "question": "Mention Tablet Capture Devices used by some hospitals?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_catvsdogdlpycon15se-1505_q07",
+      "doc_id": "catvsdogdlpycon15se-150512122612-lva1-app6891_95.pdf",
+      "question": "How many layers does the neural network mentioned in the PPT for distinguishing faces have?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 68
+    },
+    {
+      "run_id": "train_competitiveoutcomes-0910_q02",
+      "doc_id": "competitiveoutcomes-091006065143-phpapp01_95.pdf",
+      "question": "What is the utility derived from each hot dog that the boy is eating in the picture in slide 4?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 48
+    },
+    {
+      "run_id": "train_disciplined-agile-busine_q00",
+      "doc_id": "disciplined-agile-business-analysis-160218012713_95.pdf",
+      "question": "How many black arrows are part of the DISCIPLINED AGILE logo?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 41
+    },
+    {
+      "run_id": "train_disciplined-agile-busine_q02",
+      "doc_id": "disciplined-agile-business-analysis-160218012713_95.pdf",
+      "question": "How many different twitter accounts are shown in slide?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 41
+    },
+    {
+      "run_id": "train_disciplined-agile-busine_q06",
+      "doc_id": "disciplined-agile-business-analysis-160218012713_95.pdf",
+      "question": "What stages does high level lifecycle have more than basic lifecycle?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 41
+    },
+    {
+      "run_id": "train_dr-vorapptchapter1emissi_q06",
+      "doc_id": "dr-vorapptchapter1emissionsources-121120210508-phpapp02_95.pdf",
+      "question": "List all the PM health effects that increse by more than 35% in India and Thailand.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 196
+    },
+    {
+      "run_id": "train_earthlinkweb-15021311211_q04",
+      "doc_id": "earthlinkweb-150213112111-conversion-gate02_95.pdf",
+      "question": "Besides the two companies on page 42, what is the contact phone number of another company? Please write in string format.",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 44
+    },
+    {
+      "run_id": "train_edb88a99670417f64a6b7196_q01",
+      "doc_id": "edb88a99670417f64a6b719646aed326.pdf",
+      "question": "is there blue color handwritten words in page 30?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_edb88a99670417f64a6b7196_q04",
+      "doc_id": "edb88a99670417f64a6b719646aed326.pdf",
+      "question": "What is the zip code of the address to which the attached consumer complaint form send?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_f1f5242528411b262be447e6_q05",
+      "doc_id": "f1f5242528411b262be447e61e2eb10f.pdf",
+      "question": "Which step in Figure 1 maps to the content of Figure 10?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_f1f5242528411b262be447e6_q07",
+      "doc_id": "f1f5242528411b262be447e61e2eb10f.pdf",
+      "question": "What is the web link to this paper?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 20
+    },
+    {
+      "run_id": "train_f8d3a162ab9507e021d83dd1_q01",
+      "doc_id": "f8d3a162ab9507e021d83dd109118b60.pdf",
+      "question": "How many quizzes are there in units 4, 5, and 6 combined?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 17
+    },
+    {
+      "run_id": "train_finalmediafindingspdf-14_q02",
+      "doc_id": "finalmediafindingspdf-141228031149-conversion-gate02_95.pdf",
+      "question": "How many fieldwork personnel in all for Wave I and Wave II?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 44
+    },
+    {
+      "run_id": "train_finalpresentationdeck-wh_q07",
+      "doc_id": "finalpresentationdeck-whatwhyhowofcertificationsocial-160324220748_95.pdf",
+      "question": "The quote colored in green is said by whom?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 35
+    },
+    {
+      "run_id": "train_germanwingsdigitalcrisis_q03",
+      "doc_id": "germanwingsdigitalcrisisanalysis-150403064828-conversion-gate01_95.pdf",
+      "question": "How many Tweets are attributed to Boeing?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 23
+    },
+    {
+      "run_id": "train_germanwingsdigitalcrisis_q09",
+      "doc_id": "germanwingsdigitalcrisisanalysis-150403064828-conversion-gate01_95.pdf",
+      "question": "In how many hours Airbus incorporated a pop-up notification acknowledging the incident?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 23
+    },
+    {
+      "run_id": "train_guojixueshengshenghuozhi_q03",
+      "doc_id": "guojixueshengshenghuozhinanyingwen9.1.pdf",
+      "question": "What is the place locating at the intersection between Zijing Road and Xuetang Road? Give me the letter shown in the campus map of this guideline.  For example, \"A\". ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 40
+    },
+    {
+      "run_id": "train_mi_phone_q01",
+      "doc_id": "mi_phone.pdf",
+      "question": "How many applications are mentioned in Pages 40-47? ",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 30
+    },
+    {
+      "run_id": "train_nova_y70_q01",
+      "doc_id": "nova_y70.pdf",
+      "question": "Under the pro mode to shoot, what is the function of the icon on right hand side of the icon that select a focus mode?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 45
+    },
+    {
+      "run_id": "train_nova_y70_q02",
+      "doc_id": "nova_y70.pdf",
+      "question": "Under the pro mode to shoot, what is the function of the icon on right hand side of the icon that set white balance?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 45
+    },
+    {
+      "run_id": "train_nova_y70_q04",
+      "doc_id": "nova_y70.pdf",
+      "question": "What devices other than phone are introduced for setting device+?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 45
+    },
+    {
+      "run_id": "train_owners-manual-2170416_q01",
+      "doc_id": "owners-manual-2170416.pdf",
+      "question": "In the two styles shown in the \"Parts and Features\" section, are both styles have the orange in the picture?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 32
+    },
+    {
+      "run_id": "train_q1-2023-bilibili-inc-inv_q06",
+      "doc_id": "q1-2023-bilibili-inc-investor-presentation.pdf",
+      "question": "Compared with 22Q1, in 23Q1, how much higher is the increase rate of number of daily average active content creators than average daily video views?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    },
+    {
+      "run_id": "train_san-francisco-11-content_q05",
+      "doc_id": "san-francisco-11-contents.pdf",
+      "question": "Name a restaurant between 36th Ave. and 37th Ave..",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 40
+    },
+    {
+      "run_id": "train_stereo_headset_q04",
+      "doc_id": "stereo_headset.pdf",
+      "question": "How steps are needed to pair and connecting the headset with a computer (Mac)?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 151
+    },
+    {
+      "run_id": "train_stereo_headset_q07",
+      "doc_id": "stereo_headset.pdf",
+      "question": "How many figures are provided in Pages 400-640?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 151
+    },
+    {
+      "run_id": "train_t480_ug_en_q02",
+      "doc_id": "t480_ug_en.pdf",
+      "question": "Which side of the camera indicator is on the infrared camera lens?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 170
+    },
+    {
+      "run_id": "train_t480_ug_en_q07",
+      "doc_id": "t480_ug_en.pdf",
+      "question": "Which chemical element in the earphone exceeds the limit requirements stipulated in the GB/T 26572 standard?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 170
+    },
+    {
+      "run_id": "train_watch_d_q02",
+      "doc_id": "watch_d.pdf",
+      "question": "How many steps are needed to customize the function of the Down Button?",
+      "why_chosen": "Random draw (seed 20261024) from the questions on documents not used in s0 to s3.",
+      "n_pages": 27
+    }
+  ]
+}
