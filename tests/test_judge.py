@@ -432,3 +432,29 @@ def test_index_is_built_without_thinking_when_asked(tmp_path: Path) -> None:
         off.reasoning is True and off.max_tokens_scale == 20.0
     )  # the run's own settings are untouched
     assert idx.text_model == off.text_model and idx.api_url == off.api_url
+
+
+def test_settings_diff_and_result_score() -> None:
+    from pine.agent.common import result_score, settings_diff
+
+    old = {
+        "reasoning": False,
+        "max_tokens_scale": 1.0,
+        "llm_cache_dir": "a",
+        "only_old": 1,
+    }
+    new = {
+        "reasoning": True,
+        "max_tokens_scale": 1.0,
+        "llm_cache_dir": "b",
+        "only_new": 2,
+    }
+    assert settings_diff(old, new) == {
+        "reasoning": (False, True)
+    }  # cache dir and one-sided keys ignored
+    assert settings_diff(old, old) == {}
+    assert result_score(
+        {"score": 1.0, "score_source": "llm_judge", "score_official_rule": 0.0}
+    ) == (1.0, "llm_judge")
+    # a result written before the judge existed has only the rule-based score
+    assert result_score({"score_official_rule": 0.5}) == (0.5, "rules")
