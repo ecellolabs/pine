@@ -44,6 +44,8 @@ from pine.agent.common import (
     batch_label,
     new_batch_dir,
     redacted_argv,
+    result_score,
+    settings_diff,
     write_json,
 )
 from pine.agent.runner import RunSpec, run_sample
@@ -445,6 +447,23 @@ def main() -> None:
             "the judge is the same model on the same server as the agent: a model grading its "
             "own answers is biased. Point --judge-api-url/--judge-model at a different model."
         )
+    previous = batch_dir / "manifest.json"
+    if previous.exists():
+        # a batch folder that already has results: its finished questions are kept, not rerun
+        old = json.loads(previous.read_text())
+        changed = settings_diff(old.get("settings", {}), settings.public())
+        n_done = len(list(batch_dir.glob("*/06_evaluation/result.json")))
+        logger.warning(
+            f"resuming existing batch {batch_dir.name!r} (started {old.get('started_at')}) with "
+            f"{n_done} finished question(s) that will NOT be rerun."
+        )
+        if changed:
+            logger.warning(
+                "it was started with different settings, so its finished results are from "
+                "another configuration: "
+                + "; ".join(f"{k}: {a!r} -> {b!r}" for k, (a, b) in changed.items())
+                + ". Use a new --batch-name for a clean run."
+            )
     manifest: dict[str, Any] = {
         "batch": batch_dir.name,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -472,10 +491,11 @@ def main() -> None:
             "question": spec.question,
         }
         if result is not None:
+            score, source = result_score(result)
             entry.update(
                 status="ok",
-                score=result["score"],
-                score_source=result["score_source"],
+                score=score,
+                score_source=source,
                 score_rules=result["score_official_rule"],
                 answer=result["raw_system_answer"],
             )
@@ -500,7 +520,7 @@ def main() -> None:
             for spec, result, error in run_doc(doc_specs, settings, shared_root):
                 record(spec, result, error)
 
-    scored = [r["score"] for r in results]
+    scored = [result_score(r)[0] for r in results]
     rule_scored = [r["score_official_rule"] for r in results]
     print("\n" + "=" * 70)
     print(f"AGENT QA RUNS  dataset={args.name}  {describe(resolved)}")
@@ -514,13 +534,15 @@ def main() -> None:
             print(f"  {entry['run_id']:<40} FAILED: {entry['error'][:80]}")
     if scored:
         print(
-            f"  mean score ({results[0]['score_source']}): {sum(scored) / len(scored):.3f} over {len(scored)} question(s)"
+            f"  mean score ({result_score(results[0])[1]}): {sum(scored) / len(scored):.3f} over {len(scored)} question(s)"
         )
         if args.judge_model:
             print(
                 f"  mean rule-based score (audit): {sum(rule_scored) / len(rule_scored):.3f}"
             )
-            fell_back = sum(1 for r in results if r["score_source"] == "rules_fallback")
+            fell_back = sum(
+                1 for r in results if result_score(r)[1] == "rules_fallback"
+            )
             if fell_back:
                 print(
                     f"  judge failed on {fell_back} question(s): those use the rule-based score"

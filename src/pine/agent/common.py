@@ -245,6 +245,28 @@ class CostLedger:
 _SECRET_FLAGS = ("--api-key", "--vision-api-key")
 
 
+def settings_diff(
+    old: dict[str, Any], new: dict[str, Any]
+) -> dict[str, tuple[Any, Any]]:
+    """Settings (from ``AgentSettings.public()``) whose value differs between two runs.
+
+    Keys only one side has are ignored, so a manifest written by an older version of the code
+    does not count every newly added setting as a difference."""
+    return {
+        k: (old[k], new[k])
+        for k in sorted(old.keys() & new.keys())
+        if old[k] != new[k] and k not in {"llm_cache_dir"}
+    }
+
+
+def result_score(result: dict[str, Any]) -> tuple[float, str]:
+    """The score of a ``result.json`` and where it came from; results written before the judge
+    existed have only the rule-based ``score_official_rule``."""
+    if "score" in result:
+        return float(result["score"]), str(result.get("score_source", "rules"))
+    return float(result["score_official_rule"]), "rules"
+
+
 def redacted_argv(argv: list[str] | None = None) -> str:
     """The command line with the value of every ``--*api-key`` flag masked, so run
     logs and manifests never contain a key passed on the command line."""
