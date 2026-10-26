@@ -29,6 +29,8 @@ from typing import Any
 
 _tok = re.compile(r"[a-z0-9]+")
 REF_RE = re.compile(r"\b(fig(?:ure)?|tab(?:le)?)\.?\s*(\d+)\b", re.IGNORECASE)
+# a question that names a page ("the table on page 98", "slide 15") is anchored on it
+PAGE_RE = re.compile(r"\b(?:page|pg|slide)\.?\s*(\d{1,4})\b", re.IGNORECASE)
 
 
 def tokens(s: str) -> list[str]:
@@ -215,7 +217,7 @@ def enriched_outline(index: dict[str, Any]) -> str:
 class RefHit:
     ref: str  # "Figure 1"
     pages: list[int]
-    via: str  # caption | mention | none
+    via: str  # caption | mention | none | page (named in the question)
     captions: list[str] = field(default_factory=list)
 
 
@@ -310,6 +312,10 @@ class RegionLocator:
         qs = [q for q in [question, *(queries or [])] if q and q.strip()]
         qs = list(dict.fromkeys(q.strip() for q in qs))
         refs = self.resolve_refs(question)
+        n_pages = int(self.index.get("n_pages") or 0)
+        for num in dict.fromkeys(int(m) for m in PAGE_RE.findall(question)):
+            if 1 <= num <= n_pages:
+                refs.append(RefHit(f"page {num}", [num], "page"))
         ref_pages = [p for r in refs for p in r.pages]
         ref_sections = sections_for_pages(self.index, ref_pages)
 
@@ -364,6 +370,8 @@ class RegionLocator:
                     lines.append(
                         f"- {r.ref}: no caption found; mentioned in the text of page(s) {r.pages}"
                     )
+                elif r.via == "page":
+                    lines.append(f"- {r.ref} is named in the question: open it first")
                 else:
                     lines.append(f"- {r.ref}: not found in this document")
         else:

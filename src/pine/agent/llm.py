@@ -429,6 +429,11 @@ def traced_model(
             thinking_sampling=True,
             max_tokens_scale=max(settings.max_tokens_scale, THINKING_TOKENS_SCALE),
         )
+    elif role == "planner":
+        # the planner never thinks unless asked for by name: with thinking on it ran out
+        # of its reply budget in half of its calls (batch full_think) and fell back to
+        # the default plan after minutes
+        settings = dataclasses.replace(settings, reasoning=False)
     return TracedModel(
         base_model(settings, model_name),
         settings=settings,

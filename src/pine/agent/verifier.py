@@ -17,12 +17,11 @@ Writes 05_evidence_verifier/verification_round{N}.json, llm_calls.jsonl, verifie
 from __future__ import annotations
 
 import difflib
-import logging
 import re
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
 
@@ -30,7 +29,6 @@ from pine.agent.common import (
     AgentSettings,
     CostLedger,
     read_json,
-    render_page,
     setup_logger,
     write_json,
 )
@@ -40,7 +38,7 @@ from pine.agent.schemas import Verdict
 
 VERIFY_INSTRUCTIONS = """You are the VERIFIER of a grounded document question-answering system. Decide whether the cited evidence from the document supports the proposed answer. Be strict: the answer must be directly supported by the evidence text, not by general knowledge.
 Report whether the quoted evidence is actually present in the cited page content, a 1-2 sentence explanation, and concrete gaps (what is still missing or should be checked: sections, pages, figures).
-Evidence may be spread over several pages (a table on one page, the entity it is about on another); a link shown in any note read this round counts. Evidence marked as a vision model description was read from an image: it is checked separately against the page image, so judge only whether it supports the answer.
+Evidence may be spread over several pages (a table on one page, the entity it is about on another); a link shown in any note read this round counts. Evidence marked as a vision model description was read from an image and is not expected in the page text: never reject it for being absent from the text; judge only whether it supports the answer.
 In check_pages, name up to 3 pages from the index view that were not read yet and may hold missing or contradicting evidence; for an abstention and for a list or count answer, always look for such pages (a list often continues on the next page).
 If the answer is computed (a sum, difference or count), redo the computation from the evidence; a wrong result is "not_supported".
 Name every gap with concrete page numbers, taken from the index view or the pages read (for example "inspect the chart on page 15"); a gap that names no page to look at cannot be acted on.
@@ -63,10 +61,6 @@ Evidence (ledger entries recorded by the agent):
 
 Cited page content:
 {pages}"""
-
-REREAD_INSTRUCTIONS = """You read one region of a document page. Answer only from what is visible in the image. The region may hold only part of the answer: other parts can be on other pages of the document.
-First list every value or fact visible here that is relevant to the question, one per line, each with its label exactly as shown.
-Then end with exactly one line: "ANSWER: <short answer>" if this region alone answers the question, "ANSWER: PARTIAL" if it holds only part of what is needed, or "ANSWER: NOT_SHOWN" if nothing relevant to the question is visible."""
 
 
 def _norm(s: str) -> str:
@@ -257,13 +251,12 @@ def _previous_line(previous: dict[str, Any] | None) -> str:
 
 _CHECK_WORDS = {
     "confirmed_by_text": "confirmed: the values stand in the page's own text",
-    "confirmed_by_reread": "confirmed by a second, blind reading of the image",
-    "disputed": "DISPUTED by a second, blind reading of the image",
-    "vision_only": "not checkable (no text layer, no second reading)",
+    "vision_only": "read from the image; the page text cannot confirm or deny it",
 }
 # a verdict that rejects the answer for its image evidence, not for its content
 _IMAGE_DOUBT = re.compile(
-    r"vision|image|visual|chart|figure|graph|column|cannot be verified|not verif",
+    r"vision|image|visual|chart|figure|graph|column|cannot be verified|not verif"
+    r"|not (?:literally )?(?:present|found) in the (?:actual |page |cited )*(?:text|content|page)",
     re.IGNORECASE,
 )
 
@@ -282,9 +275,6 @@ _REF_NUM = re.compile(
 )
 _TEXT_LAYER_CHARS = (
     200  # below this a page has no usable text layer (scanned, image-only)
-)
-_ANSWER_LINE = re.compile(
-    r"^\s*\**ANSWER\**\s*:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE
 )
 
 
@@ -321,142 +311,15 @@ def text_corroboration(answer: str, quote: str, page_text: str) -> dict[str, Any
     }
 
 
-def visual_regions(parser_dir: Path) -> dict[int, tuple[float, float, float, float]]:
-    """Per page, the box (x0, y0, x1, y1, points, origin top-left) around all its Docling
-    pictures and tables, with a margin; pages where that box is most of the page are left
-    out (the whole page is rendered at a higher resolution instead)."""
-    path = parser_dir / "docling_document.json"
-    if not path.exists():
-        return {}
-    doc = read_json(path)
-    sizes = {
-        int(k): (v["size"]["width"], v["size"]["height"])
-        for k, v in (doc.get("pages") or {}).items()
-    }
-    boxes: dict[int, list[tuple[float, float, float, float]]] = {}
-    for item in (doc.get("pictures") or []) + (doc.get("tables") or []):
-        for prov in item.get("prov") or []:
-            p, bb = prov.get("page_no"), prov.get("bbox") or {}
-            if p not in sizes or not bb:
-                continue
-            h = sizes[p][1]
-            if bb.get("coord_origin") == "BOTTOMLEFT":
-                y0, y1 = h - bb["t"], h - bb["b"]
-            else:
-                y0, y1 = bb["t"], bb["b"]
-            boxes.setdefault(p, []).append((bb["l"], min(y0, y1), bb["r"], max(y0, y1)))
-    out = {}
-    for p, bs in boxes.items():
-        w, h = sizes[p]
-        m = 12.0
-        x0 = max(0.0, min(b[0] for b in bs) - m)
-        y0 = max(0.0, min(b[1] for b in bs) - m)
-        x1 = min(w, max(b[2] for b in bs) + m)
-        y1 = min(h, max(b[3] for b in bs) + m)
-        if (x1 - x0) * (y1 - y0) < 0.6 * w * h:
-            out[p] = (x0, y0, x1, y1)
-    return out
-
-
-def _same_answer(a: str, b: str) -> bool:
-    na, nb = _readings(a), _readings(b)
-    if na and nb:
-        return all(any(_close(x, y) for y in nb) for x in na)
-    ca, cb = _norm(a), _norm(b)
-    return bool(ca and cb) and (ca in cb or cb in ca)
-
-
-def compare_reread(
-    answer: str, quote: str, reread: str, multi_page: bool
-) -> tuple[str, str]:
-    """Compare a blind second reading with the first. A definite, different answer or
-    "not shown" disputes the first reading; a page that holds only part of a multi-page
-    answer is compared on the values the first reading took from it."""
-    lines = _ANSWER_LINE.findall(reread)
-    said = lines[-1].strip() if lines else ""
-    if said.upper().startswith("NOT_SHOWN"):
-        return "disputed", "the second reading found nothing relevant on this page"
-    definite = bool(said) and not said.upper().startswith("PARTIAL")
-    if definite and not multi_page:
-        if _same_answer(answer, said):
-            return "confirmed", f"second reading: {said}"
-        return "disputed", f"second reading answered {said!r}"
-    # years ("in 2018") date a reading, they are not values read off the figure
-    answer_nums = _readings(answer)
-    values = [
-        n
-        for n in _readings(quote)
-        if _distinctive(n)
-        and not (
-            n == int(n)
-            and 1900 <= n <= 2100
-            and not any(_close(n, a) for a in answer_nums)
-        )
-    ]
-    seen = _readings(reread)
-    if values:
-        missing = [v for v in values if not _follows(v, seen)]
-        if missing:
-            return "disputed", f"second reading does not show {missing}"
-        return "confirmed", "second reading shows the same values"
-    if _same_answer(answer, reread):
-        return "confirmed", "second reading mentions the answer"
-    return "unclear", "nothing to compare"
-
-
-def _reread(
-    settings: AgentSettings,
-    pdf_path: Path,
-    page: int,
-    clip: tuple[float, float, float, float] | None,
-    question: str,
-    step_dir: Path,
-    ledger_cost: CostLedger,
-    log: logging.Logger,
-    round_no: int,
-) -> str:
-    """A second, blind reading: the question only (never the proposed answer), on a crop
-    of the page's figures and tables (or the whole page at a higher resolution)."""
-    model = traced_model(
-        settings,
-        settings.vision_model,
-        step_dir=step_dir,
-        ledger=ledger_cost,
-        logger=log,
-        step_name="05_verifier",
-    )
-    model.purpose = f"reread_p{page}_round{round_no}"
-    model.round_no = round_no
-    agent: Agent[None, str] = Agent(
-        model,
-        instructions=REREAD_INSTRUCTIONS,
-        model_settings=ModelSettings(temperature=0.0, max_tokens=400),
-    )
-    jpeg = render_page(pdf_path, page, max_side=1536, quality=85, clip=clip)
-    (step_dir / "images_reread").mkdir(parents=True, exist_ok=True)
-    (step_dir / "images_reread" / f"round{round_no}_page{page:03d}.jpg").write_bytes(
-        jpeg
-    )
-    return agent.run_sync(
-        [BinaryContent(data=jpeg, media_type="image/jpeg"), f"Question: {question}"]
-    ).output.strip()
-
-
 def check_vision_evidence(
-    settings: AgentSettings,
     final: dict[str, Any],
     quote_checks: list[dict[str, Any]],
     pages_md: dict[int, str],
-    parser_dir: Path,
-    pdf_path: Path | None,
-    question: str,
-    step_dir: Path,
-    ledger_cost: CostLedger,
-    log: logging.Logger,
-    round_no: int,
 ) -> list[dict[str, Any]]:
-    """Every page whose cited evidence came only from the vision model: first the text-layer
-    check, then, if the text cannot back it, one blind re-read of the page's figures."""
+    """Every page whose cited evidence came only from the vision model: does the page's
+    own text layer back the reading? No model call. (A second, blind reading of the page
+    image was tried and removed: it disputed correct readings whenever the page held only
+    part of a multi-page answer.)"""
     by_page: dict[int, list[str]] = {}
     for q in quote_checks:
         if q["source"] == "image_inspection":
@@ -464,56 +327,22 @@ def check_vision_evidence(
                 final["ledger"][q["entry"] - 1]["quote"]
             )
     text_pages = {q["page"] for q in quote_checks if q["source"] == "page_text"}
-    cited = {q["page"] for q in quote_checks if q["source"]}
-    multi_page = len(cited) > 1
-    regions = visual_regions(parser_dir) if by_page else {}
     checks = []
     for page, quotes in sorted(by_page.items()):
         if page in text_pages:
             continue  # the same page is also cited from its text
-        quote = "\n".join(quotes)
-        check: dict[str, Any] = {"page": page}
-        check["text"] = text_corroboration(
-            final["answer"], quote, pages_md.get(page, "")
+        text = text_corroboration(
+            final["answer"], "\n".join(quotes), pages_md.get(page, "")
         )
-        if check["text"]["status"] == "confirmed":
-            check["status"] = "confirmed_by_text"
-        elif pdf_path is None:
-            check["status"] = "vision_only"
-        else:
-            try:
-                reply = _reread(
-                    settings,
-                    pdf_path,
-                    page,
-                    regions.get(page),
-                    question,
-                    step_dir,
-                    ledger_cost,
-                    log,
-                    round_no,
-                )
-            except Exception as exc:  # noqa: BLE001 - no second reading is no evidence
-                log.error("re-read of page %d failed: %s", page, exc)
-                check.update(status="vision_only", reread_error=str(exc))
-            else:
-                verdict, why = compare_reread(final["answer"], quote, reply, multi_page)
-                check.update(
-                    reread=reply,
-                    crop=regions.get(page),
-                    why=why,
-                    status={
-                        "confirmed": "confirmed_by_reread",
-                        "disputed": "disputed",
-                    }.get(verdict, "vision_only"),
-                )
-        log.info(
-            "vision evidence page %d -> %s %s",
-            page,
-            check["status"],
-            check.get("why", ""),
+        checks.append(
+            {
+                "page": page,
+                "text": text,
+                "status": "confirmed_by_text"
+                if text["status"] == "confirmed"
+                else "vision_only",
+            }
         )
-        checks.append(check)
     return checks
 
 
@@ -528,11 +357,9 @@ def run_verifier(
     ledger_cost: CostLedger,
     round_no: int,
     max_rounds: int,
-    pdf_path: Path | None = None,
     previous: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """``pdf_path`` enables the independent vision check of image-only answers;
-    ``previous`` is the previous round's verification, so the verdict can build on it."""
+    """``previous`` is the previous round's verification, so the verdict can build on it."""
     log = setup_logger("step5.verifier", step_dir / "verifier.log", run_log)
     step_dir.mkdir(parents=True, exist_ok=True)
     model = traced_model(
@@ -606,19 +433,7 @@ def run_verifier(
             final["answer"],
             [final["ledger"][q["entry"] - 1]["quote"] for q in verified],
         )
-        vision_checks = check_vision_evidence(
-            settings,
-            final,
-            quote_checks,
-            pages_md,
-            parser_dir,
-            pdf_path,
-            question,
-            step_dir,
-            ledger_cost,
-            log,
-            round_no,
-        )
+        vision_checks = check_vision_evidence(final, quote_checks, pages_md)
     check_lines = (
         [f"- numbers: {numeric['status']}"] if numeric["status"] != "skipped" else []
     )
@@ -753,15 +568,6 @@ def run_verifier(
             f"(their sum is {numeric['sum_of_quote_numbers']}); recompute the answer "
             "from the evidence",
         )
-    for vc in vision_checks:
-        if vc["status"] == "disputed":
-            code_gaps.append("vision")
-            _reject(
-                llm_verdict,
-                f"the image evidence on page {vc['page']} did not hold up: {vc['why']}; "
-                f"re-read the figure on page {vc['page']} for the original question, "
-                "or abstain if it is not shown",
-            )
     doubts_image = _IMAGE_DOUBT.search(
         " ".join([llm_verdict.get("explanation", ""), *(llm_verdict.get("gaps") or [])])
     )
@@ -771,17 +577,27 @@ def run_verifier(
         and not llm_verdict.get("_error")
         and not code_gaps
         and numeric["status"] != "mismatch"
-        and vision_checks
-        and all(vc["status"] == "confirmed_by_text" for vc in vision_checks)
+        and any(q["source"] == "image_inspection" for q in quote_checks)
         and doubts_image
     ):
+        # the verdict only has the vision reading's text, so a rejection of the image
+        # evidence as such ("not in the page text", "cannot be verified") is not a
+        # finding about the answer: the quote was located in the reading by code
         llm_verdict["verdict"] = "supported"
         llm_verdict["explanation"] += (
-            " Code check: the values read from the image are printed in the page's own "
-            "text, so the image evidence stands."
+            " Code check: the quote stands in the vision reading of the page"
+            + (
+                " and its values are printed in the page's own text"
+                if vision_checks
+                and all(vc["status"] == "confirmed_by_text" for vc in vision_checks)
+                else ""
+            )
+            + ", so the image evidence stands."
         )
         llm_verdict["gaps"] = []
-        log.info("image evidence confirmed by the text layer: verdict set to supported")
+        log.info(
+            "image evidence rejected only for being an image: verdict set to supported"
+        )
     if final["status"] == "answered" and llm_verdict.get("verdict") == "supported":
         keys = [(e["page"], _norm(e["quote"])) for e in final.get("ledger", [])]
         if (
@@ -842,6 +658,10 @@ def run_verifier(
             set(inspections),
             index["n_pages"],
         )
+        # a first-round answer that was rejected gets one more round even when the gaps
+        # name no new page: the navigator can search for the missing half with the
+        # verdict in hand (an abstention with nothing new to look at stays final)
+        or (final["status"] == "answered" and round_no == 1)
     )
     decision = decide(
         final["status"],

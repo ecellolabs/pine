@@ -71,7 +71,7 @@ images become text:
 
 In both, the text is stored in the page's `visual_text` with its provenance and **never merged into the
 page text**. It is searchable, and the navigator sees it as a vision note for pages it reads without a fresh
-image reading. The verifier checks it like any other vision reading (text-layer check, then a blind re-read).
+image reading. The verifier checks it like any other vision reading (text-layer check).
 The navigator still asks the vision model the actual question for the pages it selects.
 
 Offline check of the lean structure and passage ranking without any image text (no model calls): gold page in

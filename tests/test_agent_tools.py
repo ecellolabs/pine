@@ -803,6 +803,10 @@ def test_locator_resolves_figure_reference_to_caption_page() -> None:
     # mention fallback when no caption carries the number, and 'not found' otherwise
     assert [(r.pages, r.via) for r in loc.resolve_refs("Table 5")] == [([5], "mention")]
     assert loc.resolve_refs("Fig. 9")[0].via == "none"
+    # a page named in the question is the first anchor (a page beyond the document is not)
+    named = loc.locate("What is in the table on page 3 and on page 99?")
+    assert named["anchor_pages"][0] == 3 and 99 not in named["anchor_pages"]
+    assert "page 3 is named in the question" in named["explanation"]
     # free-text ranking still works and the outline shows captions per section
     assert loc.rank_sections("clustering GMM nodes")[0][0] == "S2"
     assert (
@@ -976,8 +980,8 @@ def test_replan_needs_a_page_not_yet_covered() -> None:
     assert decide("answered", "not_supported", True, True, 1, 2, False) == "ABSTAIN"
 
 
-def test_vision_readings_are_checked_against_text_and_a_blind_reread() -> None:
-    from pine.agent.verifier import compare_reread, text_corroboration
+def test_vision_readings_are_checked_against_the_text_layer() -> None:
+    from pine.agent.verifier import check_vision_evidence, text_corroboration
 
     page = (
         "Categories of Shareholders " + "x " * 120 + "Foreign Companies 32.17 FII 12.79"
@@ -986,24 +990,12 @@ def test_vision_readings_are_checked_against_text_and_a_blind_reread() -> None:
     # a sum of two values that stand in the page text is confirmed without a model call
     assert text_corroboration("44.96", quote, page)["status"] == "confirmed"
     assert text_corroboration("54.96", quote, page)["status"] == "not_in_text"
-    # a page holding one part of a multi-page answer is judged on its own values
-    part = "Hispanic: 16%\nWhite, Non-Hispanic: 16%\nANSWER: PARTIAL"
-    assert compare_reread("32", "Hispanic 16%, White 16%", part, True)[0] == "confirmed"
-    # a year in the first reading's quote is not a value the second must repeat
-    part18 = "Democrats: 31%\nANSWER: PARTIAL"
-    assert (
-        compare_reread("31", "In 2018, Democrats were 31%", part18, True)[0]
-        == "confirmed"
+    # a reading the text cannot back is reported, never disputed (no second model call)
+    final = {"answer": "54.96", "ledger": [{"page": 3, "quote": quote}]}
+    checks = check_vision_evidence(
+        final, [{"entry": 1, "page": 3, "source": "image_inspection"}], {3: page}
     )
-    # a single-page answer the second reading contradicts or cannot see is disputed
-    assert (
-        compare_reread("4", "four steps", "1. a\n2. b\nANSWER: 5", False)[0]
-        == "disputed"
-    )
-    assert (
-        compare_reread("blue", "node is blue", "ANSWER: NOT_SHOWN", False)[0]
-        == "disputed"
-    )
+    assert [(c["page"], c["status"]) for c in checks] == [(3, "vision_only")]
 
 
 def test_list_answer_gets_a_coverage_round_on_the_next_page(tmp_path: Path) -> None:

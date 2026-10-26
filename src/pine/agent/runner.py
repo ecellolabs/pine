@@ -333,6 +333,7 @@ def run_sample(
     final: dict[str, Any] = {}
     verification: dict[str, Any] = {}
     force_pages: list[int] = []
+    inspected_so_far: set[int] = set()
     # an answer accepted before a coverage round, kept in case that round does worse
     fallback: tuple[dict[str, Any], dict[str, Any]] | None = None
     tool_calls_total = 0
@@ -364,8 +365,10 @@ def run_sample(
             ledger,
             round_no=round_no,
             prior_feedback=feedback,
+            prior_inspected=inspected_so_far,
         )
         tool_calls_total += final["tool_calls_used"]
+        inspected_so_far |= {i["page"] for i in final.get("image_inspections", [])}
         verification = run_verifier(
             settings,
             spec.question,
@@ -377,7 +380,6 @@ def run_sample(
             ledger,
             round_no=round_no,
             max_rounds=settings.max_rounds,
-            pdf_path=spec.pdf_path,
             previous=verification or None,
         )
         if verification["decision"] != "REPLAN":
@@ -408,23 +410,10 @@ def run_sample(
             + "; ".join(gaps)
         )
     accepted = verification.get("decision") in ("ACCEPT", "ACCEPT_WEAK_GROUNDING")
-    # a later round that reached the same answer and had it rejected is evidence against it
-    rejected_again = (
-        fallback is not None
-        and final["status"] == "answered"
-        and not accepted
-        and final["answer"].strip().lower() == fallback[0]["answer"].strip().lower()
-    )
-    if fallback is not None and rejected_again:
-        log.info(
-            "the same answer was rejected in a later round: not falling back to it"
-        )
-    if (
-        fallback is not None
-        and not rejected_again
-        and not (accepted and final["status"] == "answered")
-    ):
+    if fallback is not None and not (accepted and final["status"] == "answered"):
         # the coverage round found nothing better: keep the answer it was meant to check
+        # (a rejection of the same answer in that round is not held against it: the
+        # verdict is sampled and the first round's acceptance stands)
         final, kept = fallback
         verification = {
             **kept,
