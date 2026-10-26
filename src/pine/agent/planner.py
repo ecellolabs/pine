@@ -69,7 +69,9 @@ def build_planner(model: Any, index: dict[str, Any]) -> Agent[PlanDeps, Plan]:
             doc_title=index["doc_title"],
             outline=outline_lines(index),
         ),
-        retries=1,
+        # no retry: a plan that does not come out right the first time (a truncated reply,
+        # an invalid Plan) falls back to the locator's default plan at once
+        retries=0,
         model_settings=ModelSettings(temperature=0.0, max_tokens=700),
     )
 
@@ -156,6 +158,7 @@ def run_planner(
         ledger=ledger,
         logger=log,
         step_name="03_planner",
+        role="planner",
     )
     model.purpose = f"plan_round{round_no}"
     model.round_no = round_no

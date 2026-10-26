@@ -8,6 +8,7 @@ in the pipeline is built on top of it, so caching and accounting are uniform."""
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import logging
@@ -26,6 +27,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -41,6 +43,8 @@ _PARAMS_ADAPTER: TypeAdapter[ModelRequestParameters] = TypeAdapter(
     ModelRequestParameters
 )
 # a dropped connection must fail (and be retried) instead of hanging the batch
+# a thinking call spends most of its budget before the answer
+THINKING_TOKENS_SCALE = 6.0
 # per-task purpose for calls one TracedModel makes concurrently (index page summaries);
 # overrides ``TracedModel.purpose`` inside the task that sets it
 CALL_PURPOSE: ContextVar[str | None] = ContextVar("call_purpose", default=None)
@@ -239,6 +243,11 @@ def response_to_chat(response: ModelResponse) -> dict[str, Any]:
         if isinstance(p, ToolCallPart)
     ]
     out: dict[str, Any] = {"role": "assistant", "content": text}
+    thinking = "\n".join(
+        p.content for p in response.parts if isinstance(p, ThinkingPart) and p.content
+    )
+    if thinking:  # reasoning roles: kept in the trace so the thinking can be read
+        out["reasoning"] = thinking
     if calls:
         out["tool_calls"] = calls
     return out
@@ -406,8 +415,25 @@ def traced_model(
     ledger: CostLedger,
     logger: logging.Logger,
     step_name: str,
+    role: str | None = None,
 ) -> TracedModel:
-    """Convenience: provider model for ``model_name`` wrapped in ``TracedModel``."""
+    """Convenience: provider model for ``model_name`` wrapped in ``TracedModel``.
+
+    A ``role`` listed in ``settings.reasoning_roles`` (e.g. "planner", "navigator") thinks
+    even when reasoning is off elsewhere, with the model card's thinking sampling (greedy
+    decoding makes a thinking model loop) and room for the thinking in ``max_tokens``."""
+    if role is not None and role in settings.reasoning_roles:
+        settings = dataclasses.replace(
+            settings,
+            reasoning=True,
+            thinking_sampling=True,
+            max_tokens_scale=max(settings.max_tokens_scale, THINKING_TOKENS_SCALE),
+        )
+    elif role == "planner":
+        # the planner never thinks unless asked for by name: with thinking on it ran out
+        # of its reply budget in half of its calls (batch full_think) and fell back to
+        # the default plan after minutes
+        settings = dataclasses.replace(settings, reasoning=False)
     return TracedModel(
         base_model(settings, model_name),
         settings=settings,

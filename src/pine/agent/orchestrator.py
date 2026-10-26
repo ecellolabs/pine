@@ -122,6 +122,9 @@ class NavDeps:
     question: str = ""
     # procedural navigator: every reading of this round, with ``cited`` set after the decision
     notes: list[dict[str, Any]] = field(default_factory=list)
+    # pages whose image an earlier round already inspected (a repeat is a cache hit and
+    # does not use up one of this round's image slots)
+    prior_inspected: set[int] = field(default_factory=set)
 
     @property
     def n_pages(self) -> int:
@@ -634,6 +637,10 @@ def _needs_image(deps: NavDeps, p: int) -> bool:
     if any(p in r.get("pages", []) for r in refs):
         return True
     ps = deps.index["pages"][str(p)]
+    # a page the verifier asked for (or the previous round cited) is looked at whenever
+    # it has a picture: its text alone was not enough last time
+    if p in (deps.plan.get("forced_pages") or []) and ps.get("pictures_count"):
+        return True
     if ps.get("pictures_count") and len(deps.pages_md[p].strip()) < IMAGE_LED_CHARS:
         return True
     visual = bool(
@@ -659,8 +666,11 @@ async def _read_into_notes(
                     "text": text[:NOTE_MAX_CHARS],
                 }
             )
-    # the image slots go to the pages most likely to hold the evidence: referenced
-    # figures first, then the locator's ranking, then the rest (pages added for coverage)
+    # the image slots go to the pages most likely to hold the evidence: the pages the
+    # verifier asked for first, then referenced figures, then the locator's ranking, then
+    # the rest (pages added for coverage). Pages an earlier round already inspected are
+    # read again from the cache and do not take a slot from a page not yet looked at.
+    forced = set(deps.plan.get("forced_pages") or [])
     refs = {
         q
         for r in deps.plan.get("locator", {}).get("refs", [])
@@ -670,10 +680,17 @@ async def _read_into_notes(
         r["page"]: i
         for i, r in enumerate(deps.plan.get("locator", {}).get("ranked_pages", []))
     }
-    image_pages = sorted(
+    wanted = sorted(
         (p for p in pages if _needs_image(deps, p)),
-        key=lambda p: (p not in refs, rank.get(p, len(rank)), pages.index(p)),
-    )[:MAX_PASS_IMAGES]
+        key=lambda p: (
+            p not in forced,
+            p not in refs,
+            rank.get(p, len(rank)),
+            pages.index(p),
+        ),
+    )
+    fresh = [p for p in wanted if p not in deps.prior_inspected][:MAX_PASS_IMAGES]
+    image_pages = [p for p in wanted if p in deps.prior_inspected or p in fresh]
 
     async def look(p: int) -> str:
         CALL_PURPOSE.set(f"inspect_page_{p}")  # task-local: the calls run concurrently
@@ -694,6 +711,28 @@ async def _read_into_notes(
                 "text": text,
             }
         )
+    # lean index: a page read without a fresh image reading still brings the vision text
+    # stored in the index, as a vision note the verifier checks like any other
+    for p in pages:
+        stored = deps.index["pages"][str(p)].get("visual_text") or ""
+        if stored and p not in image_pages:
+            text = f"[from the index: vision model reading of the page images] {stored}"
+            deps.image_inspections.append(
+                {
+                    "page": p,
+                    "question": "(index visual text)",
+                    "image": "",
+                    "result": text,
+                }
+            )
+            notes.append(
+                {
+                    "id": len(notes) + 1,
+                    "page": p,
+                    "source": "image_inspection",
+                    "text": text,
+                }
+            )
 
 
 def _notes_prompt(
@@ -925,6 +964,7 @@ def run_orchestrator(
     ledger: CostLedger,
     round_no: int = 1,
     prior_feedback: str | None = None,
+    prior_inspected: set[int] | None = None,
 ) -> dict[str, Any]:
     log = setup_logger("step4.orchestrator", step_dir / "orchestrator.log", run_log)
     step_dir.mkdir(parents=True, exist_ok=True)
@@ -937,6 +977,7 @@ def run_orchestrator(
         ledger=ledger,
         logger=log,
         step_name="04_orchestrator",
+        role="navigator",
     )
     vision_model = traced_model(
         settings,
@@ -975,6 +1016,7 @@ def run_orchestrator(
         trace_path=trace_path,
         plan=plan,
         question=question,
+        prior_inspected=set(prior_inspected or ()),
     )
 
     plan_view = {

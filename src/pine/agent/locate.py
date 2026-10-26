@@ -29,6 +29,8 @@ from typing import Any
 
 _tok = re.compile(r"[a-z0-9]+")
 REF_RE = re.compile(r"\b(fig(?:ure)?|tab(?:le)?)\.?\s*(\d+)\b", re.IGNORECASE)
+# a question that names a page ("the table on page 98", "slide 15") is anchored on it
+PAGE_RE = re.compile(r"\b(?:page|pg|slide)\.?\s*(\d{1,4})\b", re.IGNORECASE)
 
 
 def tokens(s: str) -> list[str]:
@@ -128,6 +130,43 @@ def build_page_corpus(
     return docs
 
 
+PASSAGE_WORDS = (
+    150  # a passage is about a paragraph; long paragraphs are cut into windows
+)
+
+
+def build_passage_corpus(
+    index: dict[str, Any], pages_md: dict[int, str]
+) -> dict[str, str]:
+    """Paragraph-sized passages ``"<page>#<i>"`` for the lean index, each with the page's
+    title and captions repeated (as in ``build_page_corpus``) so 'Figure N' still ranks the
+    caption page first. A page's stored image text adds its own passages."""
+    docs: dict[str, str] = {}
+    for p_str, ps in index["pages"].items():
+        p = int(p_str)
+        figs = " ".join(ps.get("figures") or [])
+        tabs = " ".join(ps.get("tables") or [])
+        header = f"{ps.get('title', '')} " * 3 + f"{figs} {tabs} " * 5
+        paragraphs = [b for b in pages_md.get(p, "").split("\n\n") if b.strip()]
+        paragraphs += [
+            b for b in (ps.get("visual_text") or "").split("\n") if b.strip()
+        ]
+        chunks: list[str] = []
+        buf: list[str] = []
+        for para in paragraphs:
+            words = para.split()
+            for i in range(0, max(len(words), 1), PASSAGE_WORDS):
+                buf += words[i : i + PASSAGE_WORDS]
+                if len(buf) >= 40:
+                    chunks.append(" ".join(buf))
+                    buf = []
+        if buf or not chunks:
+            chunks.append(" ".join(buf))
+        for i, chunk in enumerate(chunks):
+            docs[f"{p}#{i}"] = f"{header} {chunk}"
+    return docs
+
+
 def _ref_labels(ps: dict[str, Any], key: str) -> list[int]:
     """Figure/table numbers whose caption sits on this page."""
     out: list[int] = []
@@ -178,7 +217,7 @@ def enriched_outline(index: dict[str, Any]) -> str:
 class RefHit:
     ref: str  # "Figure 1"
     pages: list[int]
-    via: str  # caption | mention | none
+    via: str  # caption | mention | none | page (named in the question)
     captions: list[str] = field(default_factory=list)
 
 
@@ -190,6 +229,11 @@ class RegionLocator:
         self.sections = walk_sections(index)
         self.page_docs = build_page_corpus(index, pages_md or {})
         self.page_bm25 = BM25(self.page_docs)
+        # a lean index ranks a page by its best passage: a long page no longer dilutes
+        # the one paragraph that matches
+        self.passage_bm25: BM25 | None = None
+        if index.get("index_kind") == "lean":
+            self.passage_bm25 = BM25(build_passage_corpus(index, pages_md or {}))
         sec_docs: dict[str, str] = {}
         for s in self.sections:
             parts = [s["title"]] * 3
@@ -240,6 +284,12 @@ class RegionLocator:
 
     # ---- lexical ranking
     def rank_pages(self, query: str, k: int = 5) -> list[tuple[int, float]]:
+        if self.passage_bm25 is not None:
+            best: dict[int, float] = {}
+            for pid, s in self.passage_bm25.search(query, k=k * 10):
+                page = int(str(pid).split("#")[0])
+                best[page] = max(best.get(page, 0.0), s)
+            return sorted(best.items(), key=lambda x: -x[1])[:k]
         return [(int(p), s) for p, s in self.page_bm25.search(query, k=k)]
 
     def rank_sections(self, query: str, k: int = 3) -> list[tuple[str, float]]:
@@ -262,6 +312,10 @@ class RegionLocator:
         qs = [q for q in [question, *(queries or [])] if q and q.strip()]
         qs = list(dict.fromkeys(q.strip() for q in qs))
         refs = self.resolve_refs(question)
+        n_pages = int(self.index.get("n_pages") or 0)
+        for num in dict.fromkeys(int(m) for m in PAGE_RE.findall(question)):
+            if 1 <= num <= n_pages:
+                refs.append(RefHit(f"page {num}", [num], "page"))
         ref_pages = [p for r in refs for p in r.pages]
         ref_sections = sections_for_pages(self.index, ref_pages)
 
@@ -316,6 +370,8 @@ class RegionLocator:
                     lines.append(
                         f"- {r.ref}: no caption found; mentioned in the text of page(s) {r.pages}"
                     )
+                elif r.via == "page":
+                    lines.append(f"- {r.ref} is named in the question: open it first")
                 else:
                     lines.append(f"- {r.ref}: not found in this document")
         else:

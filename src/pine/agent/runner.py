@@ -37,6 +37,7 @@ from pine.agent.common import (
 )
 from pine.agent.index import run_index
 from pine.agent.judge import make_judge_chat, score_answer
+from pine.agent.lean_index import run_lean_index
 from pine.agent.orchestrator import run_orchestrator
 from pine.agent.parser import run_parser
 from pine.agent.planner import run_planner
@@ -302,14 +303,24 @@ def run_sample(
 
     # ---- 02 index
     t = time.perf_counter()
-    index = run_index(
-        settings,
-        spec.pdf_path,
-        run_dir / STEP_DIRS[1],
-        run_dir / STEP_DIRS[2],
-        run_log,
-        ledger,
-    )
+    if settings.index_mode == "lean":
+        index = run_lean_index(
+            settings,
+            spec.pdf_path,
+            run_dir / STEP_DIRS[1],
+            run_dir / STEP_DIRS[2],
+            run_log,
+            ledger,
+        )
+    else:
+        index = run_index(
+            settings,
+            spec.pdf_path,
+            run_dir / STEP_DIRS[1],
+            run_dir / STEP_DIRS[2],
+            run_log,
+            ledger,
+        )
     timings["02_index"] = round(time.perf_counter() - t, 1)
     if shared_dir is not None and not reused:
         _publish_shared(shared_dir, run_dir)
@@ -322,6 +333,7 @@ def run_sample(
     final: dict[str, Any] = {}
     verification: dict[str, Any] = {}
     force_pages: list[int] = []
+    inspected_so_far: set[int] = set()
     # an answer accepted before a coverage round, kept in case that round does worse
     fallback: tuple[dict[str, Any], dict[str, Any]] | None = None
     tool_calls_total = 0
@@ -353,8 +365,10 @@ def run_sample(
             ledger,
             round_no=round_no,
             prior_feedback=feedback,
+            prior_inspected=inspected_so_far,
         )
         tool_calls_total += final["tool_calls_used"]
+        inspected_so_far |= {i["page"] for i in final.get("image_inspections", [])}
         verification = run_verifier(
             settings,
             spec.question,
@@ -366,7 +380,6 @@ def run_sample(
             ledger,
             round_no=round_no,
             max_rounds=settings.max_rounds,
-            pdf_path=spec.pdf_path,
             previous=verification or None,
         )
         if verification["decision"] != "REPLAN":
@@ -397,23 +410,10 @@ def run_sample(
             + "; ".join(gaps)
         )
     accepted = verification.get("decision") in ("ACCEPT", "ACCEPT_WEAK_GROUNDING")
-    # a later round that reached the same answer and had it rejected is evidence against it
-    rejected_again = (
-        fallback is not None
-        and final["status"] == "answered"
-        and not accepted
-        and final["answer"].strip().lower() == fallback[0]["answer"].strip().lower()
-    )
-    if fallback is not None and rejected_again:
-        log.info(
-            "the same answer was rejected in a later round: not falling back to it"
-        )
-    if (
-        fallback is not None
-        and not rejected_again
-        and not (accepted and final["status"] == "answered")
-    ):
+    if fallback is not None and not (accepted and final["status"] == "answered"):
         # the coverage round found nothing better: keep the answer it was meant to check
+        # (a rejection of the same answer in that round is not held against it: the
+        # verdict is sampled and the first round's acceptance stands)
         final, kept = fallback
         verification = {
             **kept,

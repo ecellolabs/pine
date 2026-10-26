@@ -28,7 +28,7 @@ ever contains the key.
 | `src/pine/parsers/docling.py` | remote Docling API transform (cluster) |
 | `src/pine/models/qwen.py` | OpenAI-compatible VLM client used by the B0 baseline |
 | `src/pine/sampling.py` | `--max-samples` parsing: integer **or** sample-set name (`s0` -> `sample_sets/s0.json`) |
-| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `index` (PageIndex-style tree), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `judge` (LLM answer extraction and LLM judge over saved answers; prompts in `agent/prompts/`), `baseline` (document-in-the-prompt baselines, no agent), `runner`, `visual_samples` (HTML page) |
+| `src/pine/agent/` | the agent, built on **Pydantic AI**: `llm` (provider model + cache + trace), `schemas` (typed outputs), `parser` (Docling+RapidOCR), `lean_index` (default index: Docling structure in code + a transcription of each large image; see INDEX.md), `index` (the original model-summarised index, `--index full`), `locate` (deterministic region locator: figure/table caption resolution + BM25 over pages and sections; also the navigator's search corpus), `planner` (agent with the `locate_regions` tool), `orchestrator` (`Agent` with `@agent.tool` tools, `final_answer` output tool, driven with `agent.iter`), `verifier` (ledger + quote check), `scoring` (official MMLongBench-Doc rules), `judge` (LLM answer extraction and LLM judge over saved answers; prompts in `agent/prompts/`), `baseline` (document-in-the-prompt baselines, no agent), `runner`, `visual_samples` (HTML page) |
 | `usage/0N_*.py` | stateless CLI stages (00 dataset, 01 Docling preprocess, 02 agent, 03 visual page; `B0_evaluation.py` is the single-pass VLM baseline, not a stage); `02_agent_qa.py` runs the agent (full dataset or a selection), `03_visual_samples.py` builds the visual-samples page; `04_judge.py` rescores the saved answers of any batch or baseline folder with an LLM (no model rerun), `B1_mmlongbench_baseline.py` runs the document-in-the-prompt baselines |
 | `sample_sets/*.json` | named, exact lists of (doc_id, question) so an experiment is replicable |
 | `tests/` | pytest; `ci/` the check scripts |
@@ -125,19 +125,27 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
 
 ## Navigator and verifier (current design)
 
+- **Index (default `--index lean`)**: page records and a flat outline from Docling headings, passage-level BM25, and one vision transcription per large image (stored as `visual_text`, shown to the navigator as a vision note). `--index full` is the original page-summary index. Experiments and numbers: `INDEX.md`.
 - **Procedural navigator (default, `--navigator procedural`)**: code reads the plan's anchor pages
   (forced and carried-over pages first, topped up to 6 with the locator's next ranked pages) and decides
   which pages get a vision reading (no text, referenced figure, image-led page, or visual page when the plan
-  expects visual evidence; 4 slots, in locator order). Each reading is a numbered note; one typed `decide`
-  call answers, searches once, or abstains, citing notes by number. The ledger is built in code from the
-  cited notes with their source. `--navigator agentic` keeps the free tool loop.
+  expects visual evidence; 4 slots: the verifier's forced pages first, then referenced figures, then locator
+  order; a page an earlier round inspected is re-read from the cache without taking a slot). A question that
+  names a page ("the table on page 98") is anchored on it by the locator. Each reading is a numbered note; one
+  typed `decide` call answers, searches once, or abstains, citing notes by number. The ledger is built in
+  code from the cited notes with their source. `--navigator agentic` keeps the free tool loop.
 - **Verifier**: code checks run first and are shown to the LLM verdict: quotes against the cited note's
-  source, `numeric_check`, and for image-only evidence a text-layer check, else a blind re-read of a crop of
-  the page's figures (question only; PARTIAL allowed for multi-page answers). A disputed reading rejects the
-  answer. `check_pages` (typed) plus coverage pages (abstentions, list/count answers) become the next round's
-  first anchors; a re-plan happens only when a gap names a page not yet covered.
+  source, `numeric_check`, and for image-only evidence a text-layer check (the blind re-read of the page
+  image was removed: it disputed correct readings on multi-page answers). A verdict that rejects image
+  evidence only for being an image ("not in the page text") is overruled when the quote stands in the
+  reading. `check_pages` (typed) plus coverage pages (abstentions, list/count answers) become the next
+  round's first anchors; a rejected first-round answer always gets a second round, an abstention only when
+  a gap names a page not yet covered.
 - **Runner**: carries the previous round's cited pages forward; keeps an accepted answer if a coverage round
-  does not improve on it (not if that round reached the same answer and had it rejected).
+  does not improve on it.
+- **Thinking**: the planner never thinks unless named in `--reasoning-roles` (with thinking it ran out of
+  its reply budget in half of its calls). The tested configuration is `--no-reasoning --reasoning-roles
+  navigator,verifier`.
 - OpenRouter + qwen3.5 with `--no-reasoning`: pass `--ignore-provider Together` (it rejects reasoning-off
   plus a required tool call). A `claude-*` judge uses the Anthropic SDK and reads `ANTHROPIC_API_KEY`.
 - Sample sets: `s3` is ten questions on ten documents unused by `s0`/`s2`, for testing changes on unseen data.

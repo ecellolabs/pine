@@ -803,6 +803,10 @@ def test_locator_resolves_figure_reference_to_caption_page() -> None:
     # mention fallback when no caption carries the number, and 'not found' otherwise
     assert [(r.pages, r.via) for r in loc.resolve_refs("Table 5")] == [([5], "mention")]
     assert loc.resolve_refs("Fig. 9")[0].via == "none"
+    # a page named in the question is the first anchor (a page beyond the document is not)
+    named = loc.locate("What is in the table on page 3 and on page 99?")
+    assert named["anchor_pages"][0] == 3 and 99 not in named["anchor_pages"]
+    assert "page 3 is named in the question" in named["explanation"]
     # free-text ranking still works and the outline shows captions per section
     assert loc.rank_sections("clustering GMM nodes")[0][0] == "S2"
     assert (
@@ -976,8 +980,8 @@ def test_replan_needs_a_page_not_yet_covered() -> None:
     assert decide("answered", "not_supported", True, True, 1, 2, False) == "ABSTAIN"
 
 
-def test_vision_readings_are_checked_against_text_and_a_blind_reread() -> None:
-    from pine.agent.verifier import compare_reread, text_corroboration
+def test_vision_readings_are_checked_against_the_text_layer() -> None:
+    from pine.agent.verifier import check_vision_evidence, text_corroboration
 
     page = (
         "Categories of Shareholders " + "x " * 120 + "Foreign Companies 32.17 FII 12.79"
@@ -986,24 +990,12 @@ def test_vision_readings_are_checked_against_text_and_a_blind_reread() -> None:
     # a sum of two values that stand in the page text is confirmed without a model call
     assert text_corroboration("44.96", quote, page)["status"] == "confirmed"
     assert text_corroboration("54.96", quote, page)["status"] == "not_in_text"
-    # a page holding one part of a multi-page answer is judged on its own values
-    part = "Hispanic: 16%\nWhite, Non-Hispanic: 16%\nANSWER: PARTIAL"
-    assert compare_reread("32", "Hispanic 16%, White 16%", part, True)[0] == "confirmed"
-    # a year in the first reading's quote is not a value the second must repeat
-    part18 = "Democrats: 31%\nANSWER: PARTIAL"
-    assert (
-        compare_reread("31", "In 2018, Democrats were 31%", part18, True)[0]
-        == "confirmed"
+    # a reading the text cannot back is reported, never disputed (no second model call)
+    final = {"answer": "54.96", "ledger": [{"page": 3, "quote": quote}]}
+    checks = check_vision_evidence(
+        final, [{"entry": 1, "page": 3, "source": "image_inspection"}], {3: page}
     )
-    # a single-page answer the second reading contradicts or cannot see is disputed
-    assert (
-        compare_reread("4", "four steps", "1. a\n2. b\nANSWER: 5", False)[0]
-        == "disputed"
-    )
-    assert (
-        compare_reread("blue", "node is blue", "ANSWER: NOT_SHOWN", False)[0]
-        == "disputed"
-    )
+    assert [(c["page"], c["status"]) for c in checks] == [(3, "vision_only")]
 
 
 def test_list_answer_gets_a_coverage_round_on_the_next_page(tmp_path: Path) -> None:
@@ -1077,3 +1069,52 @@ def test_vision_evidence_is_not_relabelled_as_page_text(tmp_path: Path) -> None:
         2,
     )
     assert v["quote_checks"][0]["source"] is None
+
+
+def test_reasoning_roles_think_while_other_roles_do_not(tmp_path: Path) -> None:
+    settings = AgentSettings(
+        output_dir=tmp_path,
+        api_key="t",
+        reasoning=False,
+        reasoning_roles=["navigator"],
+        model_factory=lambda name: FunctionModel(_prompted_stub, model_name=name),
+    )
+    kw = {
+        "step_dir": tmp_path,
+        "ledger": CostLedger(tmp_path),
+        "logger": logging.getLogger("t"),
+    }
+    nav = traced_model(settings, "m", step_name="04", role="navigator", **kw)
+    ver = traced_model(settings, "m", step_name="05", role="verifier", **kw)
+    assert nav.run_settings.reasoning and nav.run_settings.thinking_sampling
+    assert nav.run_settings.max_tokens_scale > 1
+    assert not ver.run_settings.reasoning and not ver.run_settings.thinking_sampling
+
+
+def test_lean_index_builds_from_the_parse_and_ranks_by_passage(tmp_path: Path) -> None:
+    from pine.agent.lean_index import run_lean_index
+    from pine.agent.locate import RegionLocator
+
+    run_dir = tmp_path / "run"
+    parser_dir, _ = _write_parsed_doc(run_dir)
+    settings = AgentSettings(output_dir=tmp_path, api_key="t")
+    index = run_lean_index(
+        settings,
+        run_dir / "doc.pdf",
+        parser_dir,
+        run_dir / "02_lean",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+    )
+    assert index["index_kind"] == "lean" and index["visual_calls"] == 0
+    covered = [
+        p for s in index["sections"] for p in range(s["start_page"], s["end_page"] + 1)
+    ]
+    assert covered == [1, 2]
+    pages_md = {
+        p: (parser_dir / "pages" / f"page_{p:03d}.md").read_text() for p in (1, 2)
+    }
+    assert (
+        RegionLocator(index, pages_md).rank_pages("NARL atmospheric research")[0][0]
+        == 2
+    )
