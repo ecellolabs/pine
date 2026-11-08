@@ -20,3 +20,5 @@ evaluation_results/
 agent_runs/
 .claude/launch.json
 slurm
+# Training data (ViDoRe PDFs and tables) - regenerate with usage/05_training.py
+data/
