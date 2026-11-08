@@ -2,8 +2,10 @@
 
 Each example is one question on one PDF with 10 candidate pages, like the planner hands the
 answer model at inference: the gold pages plus the closest BM25 matches from the same document
-(ViDoRe's own page Markdown). About 15% become unanswerable: the gold pages are left out and the
-answer is ``Not answerable``. The long gold sentence is rewritten into MMLongBench's short form
+(ViDoRe's own page Markdown). About 15% become unanswerable: the gold pages and the pages
+either side of them are left out and the answer is ``Not answerable``. Scanned pages (no text
+layer, one image covering the page) are out of scope: a question whose gold page is a scan is
+dropped, and scans are never used as distractors. The long gold sentence is rewritten into MMLongBench's short form
 (Int / Float / Str / List) by a Qwen model behind any OpenAI-compatible endpoint.
 
 Layout under ``out_dir``::
@@ -47,6 +49,10 @@ SHORT_TYPES = {"extractive", "numerical", "boolean", "enumerative"}
 REPO = "vidore/vidore_v3_{subset}"
 TABLES = ("queries", "qrels", "documents_metadata")
 FORMATS = ("Int", "Float", "Str", "List")
+# a page is a scan (out of scope) when its PDF text layer is nearly empty and one image
+# covers most of it
+SCAN_MAX_CHARS = 50
+SCAN_MIN_IMAGE_SHARE = 0.6
 
 SHORTEN_PROMPT = """Rewrite the reference answer of a document question into the short form used by the MMLongBench-Doc benchmark.
 
@@ -79,6 +85,20 @@ class BuildSettings:
 
 
 # --------------------------------------------------------------------------- download
+def _read_table(repo: str, name: str, columns: list[str] | None = None) -> Any:
+    """All parquet shards of one table of a Hub dataset (larger subsets are sharded)."""
+    import pandas as pd
+    from huggingface_hub import HfFileSystem
+
+    shards = sorted(HfFileSystem().glob(f"datasets/{repo}/{name}/*.parquet"))
+    if not shards:
+        raise FileNotFoundError(f"no parquet files for {repo}/{name}")
+    return pd.concat(
+        [pd.read_parquet(f"hf://{s}", columns=columns) for s in shards],
+        ignore_index=True,
+    )
+
+
 def download_subset(subset: str, raw_dir: Path) -> Path:
     """Fetch one subset's tables, the corpus text (column read, no images) and its PDFs."""
     import pandas as pd
@@ -90,14 +110,11 @@ def download_subset(subset: str, raw_dir: Path) -> Path:
     for name in TABLES:
         out = d / f"{name}.parquet"
         if not out.exists():
-            pd.read_parquet(
-                f"hf://datasets/{repo}/{name}/test-00000-of-00001.parquet"
-            ).to_parquet(out)
+            _read_table(repo, name).to_parquet(out)
     corpus = d / "corpus_text.parquet"
     if not corpus.exists():
-        pd.read_parquet(
-            f"hf://datasets/{repo}/corpus/test-00000-of-00001.parquet",
-            columns=["corpus_id", "doc_id", "page_number_in_doc", "markdown"],
+        _read_table(
+            repo, "corpus", ["corpus_id", "doc_id", "page_number_in_doc", "markdown"]
         ).to_parquet(corpus)
     meta = pd.read_parquet(d / "documents_metadata.parquet")
     for file_name in meta.file_name:
@@ -120,13 +137,43 @@ def keep_type(query_types: list[str]) -> bool:
     return bool(types & SHORT_TYPES) and "open-ended" not in types
 
 
+def scanned_pages(pdf: Any) -> set[int]:
+    """1-indexed pages of an open PyMuPDF document that are scans (see SCAN_*)."""
+    import pymupdf
+
+    out = set()
+    for i, page in enumerate(pdf, 1):
+        if len(page.get_text().strip()) >= SCAN_MAX_CHARS:
+            continue
+        area = page.rect.width * page.rect.height
+        for info in page.get_image_info():
+            box = pymupdf.Rect(info["bbox"]) & page.rect
+            if box.width * box.height >= SCAN_MIN_IMAGE_SHARE * area:
+                out.add(i)
+                break
+    return out
+
+
+def gold_neighbourhood(gold: list[int]) -> set[int]:
+    """Gold pages and the pages either side: an answer often runs over onto them."""
+    return {p + d for p in gold for d in (-1, 0, 1)}
+
+
 def candidate_pages(
-    question: str, pages_md: dict[int, str], gold: list[int], k: int, answerable: bool
+    question: str,
+    pages_md: dict[int, str],
+    gold: list[int],
+    k: int,
+    answerable: bool,
+    exclude: set[int] | None = None,
 ) -> list[int]:
     """``k`` pages in page order: the gold pages (answerable only), then BM25 matches of the
-    question over the document's pages, then the remaining pages in order. An unanswerable
-    example never contains a gold page."""
-    banned = set() if answerable else set(gold)
+    question over the document's pages, then the remaining pages in order. ``exclude`` pages
+    (scans) are never distractors. An unanswerable example contains no gold page and no
+    page next to one."""
+    banned = set(exclude or ()) - (set(gold) if answerable else set())
+    if not answerable:
+        banned |= gold_neighbourhood(gold)
     ranked = [p for p, _ in BM25(dict(pages_md)).search(question, k=len(pages_md))]
     order = [*(gold if answerable else []), *ranked, *sorted(pages_md)]
     picked = list(dict.fromkeys(p for p in order if p not in banned))
@@ -157,9 +204,11 @@ def select_questions(
             r.markdown or ""
         )
     n_pdf: dict[str, int] = {}
+    scans: dict[str, set[int]] = {}
     for doc_id, row in meta.iterrows():
         with pymupdf.open(d / "pdfs" / row.file_name) as pdf:
             n_pdf[str(doc_id)] = pdf.page_count
+            scans[str(doc_id)] = scanned_pages(pdf)
     gold_by_q: dict[int, list[tuple[str, int, int]]] = {}
     for r in qrels.itertuples():
         if r.score > 0:
@@ -170,6 +219,7 @@ def select_questions(
 
     out: list[dict[str, Any]] = []
     dropped: Counter[str] = Counter()
+    dropped["scanned_pages_left_out"] = sum(len(v) for v in scans.values())
     for q in queries.itertuples():
         if q.language != "english":
             continue
@@ -191,12 +241,17 @@ def select_questions(
         if len(gold_pages) > settings.pages:
             dropped["more_gold_pages_than_slots"] += 1
             continue
+        if set(gold_pages) & scans[doc_id]:
+            dropped["gold_page_scanned"] += 1
+            continue
         qid = f"{subset}_q{int(q.query_id)}"
         answerable = _hash_share("unanswerable:" + qid) >= settings.unanswerable_share
-        if not answerable and n_pdf[doc_id] - len(gold_pages) < settings.pages:
-            answerable = (
-                True  # too few other pages to build a convincing distractor set
-            )
+        usable = set(range(1, n_pdf[doc_id] + 1)) - scans[doc_id]
+        if (
+            not answerable
+            and len(usable - gold_neighbourhood(gold_pages)) < settings.pages
+        ):
+            answerable = True  # too few other pages for a full distractor set
         out.append(
             {
                 "id": qid,
@@ -217,7 +272,12 @@ def select_questions(
                 "gold_pages": sorted(gold_pages),
                 "gold_pages_fully_relevant": sorted({p for _, p, s in gold if s >= 2}),
                 "candidate_pages": candidate_pages(
-                    q.query, doc_pages[doc_id], gold_pages, settings.pages, answerable
+                    q.query,
+                    doc_pages[doc_id],
+                    gold_pages,
+                    settings.pages,
+                    answerable,
+                    exclude=scans[doc_id],
                 ),
             }
         )
