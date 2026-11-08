@@ -1,5 +1,7 @@
 """STaR data from ViDoRe: candidate pages and the short-answer rewrite parser."""
 
+import json
+
 import pymupdf
 
 from pine.training.vidore import candidate_pages, keep_type, parse_short, scanned_pages
@@ -32,6 +34,13 @@ def test_candidate_pages_and_short_answers() -> None:
     )
     assert parse_short('{"answer": null, "answer_format": null}') == (None, None)
     assert parse_short("no json here") == (None, None)
+    paragraph = " ".join(["word"] * 11)
+    assert parse_short(f'{{"answer": "{paragraph}", "answer_format": "Str"}}') == (
+        None,
+        None,
+    )
+    long_item = json.dumps({"answer": ["short", paragraph], "answer_format": "List"})
+    assert parse_short(long_item) == (None, None)
 
     pdf = pymupdf.open()
     pdf.new_page().insert_text(

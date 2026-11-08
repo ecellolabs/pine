@@ -49,6 +49,7 @@ SHORT_TYPES = {"extractive", "numerical", "boolean", "enumerative"}
 REPO = "vidore/vidore_v3_{subset}"
 TABLES = ("queries", "qrels", "documents_metadata")
 FORMATS = ("Int", "Float", "Str", "List")
+MAX_ANSWER_WORDS = 10  # per answer, or per item of a list; longer rewrites are dropped
 # a page is a scan (out of scope) when its PDF text layer is nearly empty and one image
 # covers most of it
 SCAN_MAX_CHARS = 50
@@ -61,6 +62,8 @@ Reference answer: {answer}
 
 Rules:
 - Keep only the answer itself: a number, a short phrase, yes/no, or a list.
+- Copy the reference's own words; never abbreviate, paraphrase or add details.
+- Several items (names, values, steps) are a List, never one comma-separated string.
 - Copy numbers exactly as written in the reference; keep a % sign or a unit only when the question asks for it.
 - answer_format is Int (a whole number), Float (a decimal number or percentage), Str (text, yes/no) or List (several items, written like ["a", "b"]).
 - If the reference has no single short answer, reply {{"answer": null, "answer_format": null}}.
@@ -299,9 +302,24 @@ def parse_short(reply: str) -> tuple[str | None, str | None]:
     answer, fmt = j.get("answer"), j.get("answer_format")
     if answer in (None, "") or fmt not in FORMATS:
         return None, None
+    items = answer if isinstance(answer, list) else _list_items(answer, fmt)
+    if any(len(str(a).split()) > MAX_ANSWER_WORDS for a in items):
+        return None, None
     if isinstance(answer, list):
         answer = json.dumps([str(a) for a in answer], ensure_ascii=False)
     return str(answer).strip(), fmt
+
+
+def _list_items(answer: Any, fmt: str) -> list[Any]:
+    """Items of a list answer written as a JSON string, else the answer itself."""
+    if fmt == "List" and isinstance(answer, str):
+        try:
+            parsed = json.loads(answer)
+        except json.JSONDecodeError:
+            return [answer]
+        if isinstance(parsed, list):
+            return parsed
+    return [answer]
 
 
 def make_chat(api_url: str, api_key: str, model: str, timeout: float = 120.0) -> ChatFn:
