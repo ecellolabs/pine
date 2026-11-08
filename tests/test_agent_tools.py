@@ -889,3 +889,60 @@ def test_api_keys_are_masked_in_logged_command() -> None:
     )
     assert "sk-secret" not in cmd and "sk-other" not in cmd
     assert cmd == "02_agent_qa.py --api-key *** --vision-api-key=*** --x 1"
+
+
+def test_direct_answers_from_ten_planner_pages(tmp_path: Path) -> None:
+    import pymupdf
+    from pydantic_ai.messages import BinaryContent, UserPromptPart
+
+    from pine.agent.direct import run_direct
+
+    run_dir = tmp_path / "run"
+    (run_dir / "01_parser" / "pages").mkdir(parents=True)
+    pdf = run_dir / "doc.pdf"
+    doc = pymupdf.open()
+    for p in range(1, 15):
+        doc.new_page().insert_text((72, 72), f"page {p}")
+        text = "solar flux by year" if p == 9 else f"filler text {p}"
+        (run_dir / "01_parser" / "pages" / f"page_{p:03d}.md").write_text(text)
+    doc.save(pdf)
+    index = {
+        "doc_title": "T",
+        "n_pages": 14,
+        "sections": [{"id": "S1", "title": "All", "start_page": 1, "end_page": 14}],
+        "pages": {str(p): {"page": p, "title": f"p{p}"} for p in range(1, 15)},
+    }
+    plan = {
+        "anchor_pages": [9, 3],
+        "search_queries": ["solar flux"],
+        "locator": {"ranked_pages": [{"page": 12, "score": 1.0}]},
+    }
+    seen: list[int] = []
+
+    def answer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        prompt = next(
+            part
+            for m in messages
+            if isinstance(m, ModelRequest)
+            for part in m.parts
+            if isinstance(part, UserPromptPart)
+        )
+        seen.append(sum(isinstance(c, BinaryContent) for c in prompt.content))
+        return ModelResponse(parts=[TextPart("42")])
+
+    settings = _settings(tmp_path, lambda name: FunctionModel(answer, model_name=name))
+    final, verification = run_direct(
+        settings,
+        "What was the solar flux?",
+        pdf,
+        index,
+        plan,
+        run_dir / "01_parser",
+        run_dir / "04_orchestrator",
+        run_dir / "run.log",
+        CostLedger(run_dir),
+    )
+    assert seen == [10]
+    assert len(final["pages_read"]) == 10 and {3, 9, 12} <= set(final["pages_read"])
+    assert final["pages_read"] == sorted(final["pages_read"])
+    assert (verification["final_answer"], verification["decision"]) == ("42", "DIRECT")

@@ -1,5 +1,6 @@
 """End-to-end driver for one sample: parser -> index -> planner -> orchestrator
--> verifier -> official scorer.  Each step writes its own numbered sub-folder
+-> verifier -> official scorer (``--navigator direct``: parser -> index -> planner ->
+one answer call, ``agent/direct.py``).  Each step writes its own numbered sub-folder
 with a log; ``run.log`` is the combined log; ``summary.md`` is human readable.
 
 Folder layout produced for every sample (``<output_dir>/<run_id>/``)::
@@ -35,6 +36,7 @@ from pine.agent.common import (
     setup_logger,
     write_json,
 )
+from pine.agent.direct import run_direct
 from pine.agent.index import run_index
 from pine.agent.judge import make_judge_chat, score_answer
 from pine.agent.orchestrator import run_orchestrator
@@ -315,7 +317,29 @@ def run_sample(
     verification: dict[str, Any] = {}
     tool_calls_total = 0
     t_loop = time.perf_counter()
-    for round_no in range(1, settings.max_rounds + 1):
+    if settings.navigator == "direct":
+        plan = run_planner(
+            settings,
+            spec.question,
+            index,
+            run_dir / STEP_DIRS[3],
+            run_log,
+            ledger,
+            parser_dir=run_dir / STEP_DIRS[1],
+        )
+        final, verification = run_direct(
+            settings,
+            spec.question,
+            spec.pdf_path,
+            index,
+            plan,
+            run_dir / STEP_DIRS[1],
+            run_dir / STEP_DIRS[4],
+            run_log,
+            ledger,
+        )
+    rounds = 0 if settings.navigator == "direct" else settings.max_rounds
+    for round_no in range(1, rounds + 1):
         log.info("===== ROUND %d =====", round_no)
         plan = run_planner(
             settings,

@@ -44,6 +44,11 @@ class AgentSettings:
     vision_model: str = DEFAULT_VISION_MODEL
     max_rounds: int = 2
     max_tool_calls: int = 12
+    # "agentic": planner -> navigator -> verifier rounds. "direct": the planner's pages,
+    # topped up to answer_pages, go to one answer_model call with thinking on (agent/direct.py).
+    navigator: str = "agentic"
+    answer_model: str = "qwen/qwen3.5-9b"
+    answer_pages: int = 10
     cache_dir: Path | None = None
     docling_url: str | None = None
     rapidocr_backend: str = "torch"
@@ -92,6 +97,9 @@ class AgentSettings:
             "vision_model": self.vision_model,
             "max_rounds": self.max_rounds,
             "max_tool_calls": self.max_tool_calls,
+            "navigator": self.navigator,
+            "answer_model": self.answer_model,
+            "answer_pages": self.answer_pages,
             "docling_url": self.docling_url,
             "rapidocr_backend": self.rapidocr_backend,
             "reasoning": self.reasoning,

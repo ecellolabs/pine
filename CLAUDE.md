@@ -122,6 +122,12 @@ Every model interaction goes through `pydantic_ai.Agent`; keep it that way when 
   single forced `FinalAnswer` is requested from the evidence so far.
 - Tests never touch the network: `AgentSettings.model_factory` injects `FunctionModel`
   (scripted tool calls) or `TestModel` (schema-valid dummies). See `tests/test_agent_tools.py`.
+- `--navigator direct` (`agent/direct.py`) drops the navigator and verifier: the planner's anchor
+  pages, topped up from the locator's BM25 ranking to `--answer-pages` (10), go as 896 px images in
+  page order to one `--answer-model` call (default `qwen/qwen3.5-9b`) with thinking always on and the
+  B1 baseline's prompt, so it differs from B1 only in which pages are sent. Output lands in
+  `04_orchestrator/` (`final_round1.json`, `images_viewed/` = the pages sent); the verifier decision is
+  `DIRECT` and `gold_page_visited_by_agent` is the gold page's recall in those pages.
 
 ## Scoring (step 6)
 

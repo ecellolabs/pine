@@ -263,6 +263,27 @@ def main() -> None:
         help="Tool-call budget per round (default: 12).",
     )
     parser.add_argument(
+        "--navigator",
+        choices=["agentic", "direct"],
+        default="agentic",
+        help=(
+            "agentic: planner -> navigator -> verifier rounds. direct: the planner's "
+            "--answer-pages candidate pages go as images to one --answer-model call with "
+            "thinking on; no navigator, no verifier."
+        ),
+    )
+    parser.add_argument(
+        "--answer-model",
+        default="qwen/qwen3.5-9b",
+        help="Model that answers in --navigator direct (default: qwen/qwen3.5-9b).",
+    )
+    parser.add_argument(
+        "--answer-pages",
+        type=int,
+        default=10,
+        help="Candidate pages sent to the answer model in --navigator direct (default: 10).",
+    )
+    parser.add_argument(
         "--cache-dir",
         type=Path,
         default=None,
@@ -421,6 +442,9 @@ def main() -> None:
         vision_model=args.vision_model,
         max_rounds=args.max_rounds,
         max_tool_calls=args.max_tool_calls,
+        navigator=args.navigator,
+        answer_model=args.answer_model,
+        answer_pages=args.answer_pages,
         cache_dir=args.cache_dir,
         docling_url=args.docling_url,
         rapidocr_backend=args.rapidocr_backend,
