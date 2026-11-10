@@ -60,6 +60,25 @@ def candidate_pages(
     return sorted(picked[:k])
 
 
+def answer_prompt(question: str, hint: str | None = None) -> str:
+    """The text after the page images. ``hint`` is only used to build STaR
+    rationalizations (``pine.training.star``); inference never sends one."""
+    hint_line = f"{hint}\n\n" if hint else ""
+    return f"{INSTRUCTION}\n\n{hint_line}Question: {question}"
+
+
+def prompt_parts(
+    pdf_path: Path, pages: list[int], question: str, hint: str | None = None
+) -> list[str | bytes]:
+    """``[Page p]`` labels, JPEG pages and the instruction, in the order they are sent.
+    Shared with the STaR training data so training and inference see the same prompt."""
+    parts: list[str | bytes] = []
+    for p in pages:
+        parts += [f"[Page {p}]", render_page(pdf_path, p, max_side=PAGE_MAX_SIDE)]
+    parts.append(answer_prompt(question, hint))
+    return parts
+
+
 def run_direct(
     settings: AgentSettings,
     question: str,
@@ -85,13 +104,18 @@ def run_direct(
     pages = candidate_pages(
         plan, RegionLocator(index, pages_md), question, n_pages, settings.answer_pages
     )
+    parts = prompt_parts(pdf_path, pages, question)
     content: list[Any] = []
-    for p in pages:
-        jpeg = render_page(pdf_path, p, max_side=PAGE_MAX_SIDE)
+    for p, jpeg in zip(pages, parts[1:-1:2]):
+        assert isinstance(jpeg, bytes)
         (img_dir / f"round1_page{p:03d}_01.jpg").write_bytes(jpeg)
-        content += [f"[Page {p}]", BinaryContent(data=jpeg, media_type="image/jpeg")]
-    user = f"{INSTRUCTION}\n\nQuestion: {question}"
-    content.append(user)
+    for part in parts:
+        content.append(
+            BinaryContent(data=part, media_type="image/jpeg")
+            if isinstance(part, bytes)
+            else part
+        )
+    user = str(parts[-1])
     log.info(
         "answering from %d pages %s with %s", len(pages), pages, settings.answer_model
     )
