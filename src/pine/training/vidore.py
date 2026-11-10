@@ -84,6 +84,8 @@ class BuildSettings:
     limit: int | None = None  # first N kept questions per subset (for a quick test)
     workers: int = 8
     shorten_model: str = ""
+    # doc_ids left out entirely, e.g. the ``exclude`` list of usage/05b_overlap.py
+    exclude_docs: tuple[str, ...] = ()
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -235,6 +237,9 @@ def select_questions(
             dropped["no_gold_page" if not docs else "gold_in_several_documents"] += 1
             continue
         doc_id = docs.pop()
+        if doc_id in settings.exclude_docs:
+            dropped["excluded_document"] += 1
+            continue
         if n_pdf[doc_id] != len(doc_pages[doc_id]):
             dropped["pdf_page_count_mismatch"] += 1
             continue

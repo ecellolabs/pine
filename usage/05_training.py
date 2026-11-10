@@ -81,6 +81,12 @@ def main() -> None:
         help="Skip the short-answer rewrite; answerable questions wait in the cache step.",
     )
     p.add_argument("--workers", type=int, default=8, help="Parallel rewrite calls.")
+    p.add_argument(
+        "--exclude-docs",
+        type=Path,
+        default=None,
+        help="JSON with an 'exclude' list of doc_ids to leave out (usage/05b_overlap.py).",
+    )
     args = p.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
@@ -99,6 +105,11 @@ def main() -> None:
         limit=args.limit,
         workers=args.workers,
         shorten_model="" if args.no_rewrite else args.model,
+        exclude_docs=tuple(
+            json.loads(args.exclude_docs.read_text())["exclude"]
+            if args.exclude_docs
+            else ()
+        ),
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     chat = (
