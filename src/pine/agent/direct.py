@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import re
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,21 @@ def candidate_pages(
         )
     )
     return sorted(picked[:k])
+
+
+def split_reasoning(text: str) -> tuple[str, str]:
+    """``(reasoning, final answer)`` of the answer call's text.
+
+    OpenRouter returns the thinking separately, so the text is the answer. A vLLM server
+    without a reasoning parser (the cluster's ``serve_vllm.sh``) returns it inline: the
+    thinking ends at ``</think>`` or, with the Qwen3.5 template, at a gap of three newlines
+    (``baseline.clean_reply``). Text with neither marker is taken as the answer."""
+    text = re.sub(r"<\|(?:im_end|endoftext)\|>", "", text)
+    for marker in ("</think>", "\n\n\n"):
+        if marker in text:
+            reasoning, answer = text.rsplit(marker, 1)
+            return reasoning.replace("<think>", "", 1).strip(), answer.strip()
+    return "", text.strip()
 
 
 def answer_prompt(question: str, hint: str | None = None) -> str:
@@ -147,8 +163,10 @@ def run_direct(
         ),
     )
     error = None
+    reasoning = ""
     try:
-        answer = asyncio.run(agent.run(content)).output.strip()
+        # the cluster's vLLM returns the thinking inline; keep it out of the scored answer
+        reasoning, answer = split_reasoning(asyncio.run(agent.run(content)).output)
     except Exception as exc:  # noqa: BLE001 - a failed call is scored as no answer
         log.error("direct answer call failed: %s", exc)
         answer, error = "", str(exc)
@@ -160,7 +178,7 @@ def run_direct(
         "status": status,
         "answer": answer,
         "evidence_pages": [],
-        "reasoning": "",
+        "reasoning": reasoning,
         "salvaged": error is not None,
         "round": 1,
         "tool_calls_used": 0,

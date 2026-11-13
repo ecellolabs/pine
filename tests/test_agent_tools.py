@@ -946,3 +946,19 @@ def test_direct_answers_from_ten_planner_pages(tmp_path: Path) -> None:
     assert len(final["pages_read"]) == 10 and {3, 9, 12} <= set(final["pages_read"])
     assert final["pages_read"] == sorted(final["pages_read"])
     assert (verification["final_answer"], verification["decision"]) == ("42", "DIRECT")
+
+
+def test_direct_splits_inline_reasoning() -> None:
+    from pine.agent.direct import split_reasoning
+
+    # OpenRouter: the thinking comes separately, the text is the answer
+    assert split_reasoning(" 42 ") == ("", "42")
+    # vLLM without a reasoning parser: thinking inline, ended by </think> or a 3-newline gap
+    assert split_reasoning("<think>count the rows</think>\n\n42<|im_end|>") == (
+        "count the rows",
+        "42",
+    )
+    assert split_reasoning("The user wants the total.\n\nPage 9 says 42.\n\n\n42") == (
+        "The user wants the total.\n\nPage 9 says 42.",
+        "42",
+    )
