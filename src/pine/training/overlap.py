@@ -49,6 +49,8 @@ def vidore_texts(raw_dir: Path) -> dict[str, str]:
 def pdf_text(path: Path) -> str:
     import pymupdf
 
+    # broken image colour spaces in some PDFs print errors that do not affect the text
+    pymupdf.TOOLS.mupdf_display_errors(False)
     with pymupdf.open(path) as pdf:
         return "\n".join(page.get_text() for page in pdf)
 
