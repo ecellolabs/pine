@@ -11,7 +11,7 @@
 #   OUT          output folder for checkpoints (required)
 #   MODEL        [Qwen/Qwen3.5-9B]
 #   EPOCHS       [2]           MAX_STEPS   [-1, i.e. epochs decide]
-#   LR           [1e-4]        RANK [16]   ALPHA [32]
+#   LR           [1e-4]        LORA_RANK [16]   LORA_ALPHA [32]  (not RANK: torch sets RANK)
 #   GRAD_ACCUM   [16]          (batch size 1 per GPU, so 16 examples per step)
 #   SAVE_STEPS   [20]          (optimizer steps between checkpoints; the last 3 are kept)
 #   MAX_LENGTH   [16384]       examples longer than this are dropped, not truncated
@@ -24,8 +24,8 @@ MODEL=${MODEL:-Qwen/Qwen3.5-9B}
 EPOCHS=${EPOCHS:-2}
 MAX_STEPS=${MAX_STEPS:--1}
 LR=${LR:-1e-4}
-RANK=${RANK:-16}
-ALPHA=${ALPHA:-32}
+LORA_RANK=${LORA_RANK:-16}
+LORA_ALPHA=${LORA_ALPHA:-32}
 GRAD_ACCUM=${GRAD_ACCUM:-16}
 MAX_LENGTH=${MAX_LENGTH:-16384}
 ATTN=${ATTN:-flash_attention_2}
@@ -36,6 +36,9 @@ mkdir -p "$OUT"
 # image paths in train.jsonl are relative to the SFT folder
 cd "$SFT_DIR"
 
+# --use_hf: load the model from the Hugging Face cache ($HF_HOME, already filled by vLLM).
+# ms-swift's default is ModelScope, which downloads 19 GB into the container's in-memory
+# filesystem and gets the job OOM-killed.
 # Pages are pre-rendered at 896 px (direct mode's size, about 600 tokens each);
 # 1024 tokens per image means ms-swift never downscales them.
 PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' \
@@ -43,6 +46,7 @@ IMAGE_MAX_TOKEN_NUM=1024 \
 NPROC_PER_NODE=${NPROC_PER_NODE:-1} \
 swift sft \
     --model "$MODEL" \
+    --use_hf true \
     --tuner_type lora \
     --dataset train.jsonl \
     --split_dataset_ratio 0 \
@@ -50,8 +54,8 @@ swift sft \
     --attn_impl "$ATTN" \
     --freeze_vit true \
     --target_modules all-linear \
-    --lora_rank "$RANK" \
-    --lora_alpha "$ALPHA" \
+    --lora_rank "$LORA_RANK" \
+    --lora_alpha "$LORA_ALPHA" \
     --learning_rate "$LR" \
     --num_train_epochs "$EPOCHS" \
     --max_steps "$MAX_STEPS" \

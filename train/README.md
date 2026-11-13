@@ -7,6 +7,25 @@ with vLLM → evaluate with `06_star_sample.py --split dev` and `02_agent_qa.py 
 Training is not part of the `pine` package (no torch in `pyproject.toml`); it runs in its own
 Python 3.12 environment on a GPU machine.
 
+## DFKI cluster (pegasus)
+
+Same pattern as `vllm_serving/`: build a container image once, then run training in it.
+Data and outputs stay under `/netscratch/$USER`; the model comes from the HF cache vLLM filled.
+
+```bash
+cd /netscratch/$USER/projects/pipeline-v2
+bash train/setup_swift_image.sh                     # once -> /netscratch/$USER/envs/swift.sqsh
+srun -c 1 --mem=4G --time=00:30:00 uv run usage/07_star_sft.py --data-dir /netscratch/$USER/data/vidore_v3 \
+    --samples /netscratch/$USER/data/vidore_v3/star/train_k4.jsonl --name smoke
+SFT_DIR=/netscratch/$USER/data/vidore_v3/sft/smoke OUT=/netscratch/$USER/outputs/star/smoke \
+    MAX_STEPS=4 SAVE_STEPS=4 GRAD_ACCUM=1 TIME=00:45:00 bash train/run_train_cluster.sh
+```
+
+Then the checks of section 4 below. `07_star_sft.py` reads whatever `train_k4.jsonl` holds, so a
+smoke set can be built while STaR sampling is still running. The real run drops the smoke
+variables. Defaults: 4 CPUs, 48 GB RAM, one GPU of 48 GB or more, 6 h, `ATTN=sdpa` (build the
+image with `FLASH_ATTN=1` and pass `ATTN=flash_attention_2` for faster attention).
+
 ## 1. Pod
 
 One GPU with 48–80 GB (A100 80GB, H100, L40S, A6000). A bf16 LoRA of the 9B needs about
